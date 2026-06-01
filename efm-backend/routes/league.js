@@ -2,7 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const League = require('../models/League');
-const User = require('../models/User');
+const User = require('../models/user');
 const Fixture = require('../models/Fixture'); 
 const generateRoundRobin = require('../utils/scheduler'); 
 

@@ -3,7 +3,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs'); // Note: Consider implementing password hashing in register/login later!
 const jwt = require('jsonwebtoken');
 const router = express.Router();
-const User = require('../models/User');
+const User = require('../models/user');
 
 // @desc    Manager login (by username or eFootball ID)
 // @route   POST /api/v1/auth/login

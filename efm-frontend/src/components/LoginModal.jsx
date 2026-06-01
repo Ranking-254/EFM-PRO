@@ -22,7 +22,7 @@ const LoginModal = ({ isOpen, onClose, onLogin }) => {
         setIsSubmitting(true);
 
         try {
-            const res = await axios.post('http://localhost:5000/api/v1/auth/login', {
+            const res = await axios.post('https://efm-pro.onrender.com/api/v1/auth/login', {
                 identifier: val
             });
 

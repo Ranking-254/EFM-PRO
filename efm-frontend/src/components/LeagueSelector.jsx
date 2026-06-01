@@ -17,7 +17,7 @@ const LeagueSelector = ({ currentUser, onSelectLeague }) => {
         setLoading(true);
         setError('');
         try {
-            const res = await axios.get(`http://localhost:5000/api/v1/leagues/my-leagues/${currentUser.id}`);
+            const res = await axios.get(`https://efm-pro.onrender.com/api/v1/leagues/my-leagues/${currentUser.id}`);
             if (res.data.success) {
                 setLeagues(res.data.data);
             }

@@ -118,10 +118,9 @@ const Register = ({ onRegistrationSuccess, onCancel }) => {
                 teamStrength: strength
             };
 
-            const response = await axios.post('http://localhost:5000/api/v1/auth/register', payload, {
-                headers: { 'Content-Type': 'application/json' }
-            });
-
+           const response = await axios.post('https://efm-pro.onrender.com/api/v1/auth/register', payload, {
+    headers: { 'Content-Type': 'application/json' }
+});
             setStatusMessage({
                 type: 'success',
                 text: response.data.message || 'Registration completed successfully!'
@@ -176,7 +175,7 @@ const Register = ({ onRegistrationSuccess, onCancel }) => {
                             type="text"
                             name="username"
                             required
-                            placeholder="# KONAMI-ID-123"
+                            placeholder="#efootball fc"
                             value={formData.username}
                             onChange={handleInputChange}
                             className="w-full bg-[#0b0f17] border border-slate-800 rounded-xl px-4 py-3.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all"
@@ -203,7 +202,7 @@ const Register = ({ onRegistrationSuccess, onCancel }) => {
                         type="text"
                         name="whatsappNumber"
                         required
-                        placeholder="+1 (234) 567-890"
+                        placeholder="e.g. +254712345678"
                         value={formData.whatsappNumber}
                         onChange={handleInputChange}
                         className="w-full bg-[#0b0f17] border border-slate-800 rounded-xl px-4 py-3.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all"

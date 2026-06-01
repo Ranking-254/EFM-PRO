@@ -24,7 +24,7 @@ const AdminDesk = ({ leagueId, onSelectLeague }) => {
 
     const fetchLeagues = async () => {
         try {
-            const res = await axios.get('http://localhost:5000/api/v1/leagues/all');
+            const res = await axios.get('https://efm-pro.onrender.com/api/v1/leagues/all');
             if (res.data.success) {
                 setLeagues(res.data.data);
             }
@@ -44,7 +44,7 @@ const AdminDesk = ({ leagueId, onSelectLeague }) => {
         }
 
         try {
-            const fixturesRes = await axios.get(`http://localhost:5000/api/v1/leagues/${leagueId}/fixtures`);
+            const fixturesRes = await axios.get(`https://efm-pro.onrender.com/api/v1/leagues/${leagueId}/fixtures`);
             if (fixturesRes.data.success) {
                 const disputed = fixturesRes.data.data.filter(f => f.status === 'disputed');
                 setDisputedFixtures(disputed);
@@ -80,7 +80,7 @@ const AdminDesk = ({ leagueId, onSelectLeague }) => {
 
         try {
             const res = await axios.patch(
-                `http://localhost:5000/api/v1/leagues/fixtures/${resolveForm.fixtureId}/resolve`,
+                `https://efm-pro.onrender.com/api/v1/leagues/fixtures/${resolveForm.fixtureId}/resolve`,
                 {
                     playerAScore: scoreA,
                     playerBScore: scoreB

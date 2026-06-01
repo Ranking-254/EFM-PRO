@@ -43,7 +43,7 @@ const ScoreSubmissionModal = ({ isOpen, onClose, fixture, currentUserId, onSubmi
 
         try {
             const res = await axios.post(
-                `http://localhost:5000/api/v1/leagues/fixtures/${fixture._id}/submit`,
+                `https://efm-pro.onrender.com/api/v1/leagues/fixtures/${fixture._id}/submit`,
                 {
                     userId: currentUserId,
                     yourScore: parsedYourScore,

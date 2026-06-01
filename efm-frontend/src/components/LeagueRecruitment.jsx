@@ -13,7 +13,7 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey })
     const fetchLeagues = useCallback(async () => {
         setLoading(true);
         try {
-            const res = await axios.get('http://localhost:5000/api/v1/leagues/all');
+            const res = await axios.get('https://efm-pro.onrender.com/api/v1/leagues/all');
             if (res.data.success) {
                 setLeagues(res.data.data);
             }
@@ -40,7 +40,7 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey })
         setSuccess('');
 
         try {
-            const res = await axios.post(`http://localhost:5000/api/v1/leagues/${leagueId}/join`, {
+            const res = await axios.post(`https://efm-pro.onrender.com/api/v1/leagues/${leagueId}/join`, {
                 userId: currentUser.id
             });
 

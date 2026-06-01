@@ -19,7 +19,7 @@ const LeagueTable = ({ leagueId, currentUser }) => {
     const fetchStandings = async (id) => {
         setLoading(true);
         try {
-            const res = await axios.get(`http://localhost:5000/api/v1/leagues/${id}/standings`);
+            const res = await axios.get(`https://efm-pro.onrender.com/api/v1/leagues/${id}/standings`);
             if (res.data.success) {
                 setStandings(res.data.table);
                 setLeagueName(res.data.leagueName);
@@ -36,7 +36,7 @@ const LeagueTable = ({ leagueId, currentUser }) => {
         if (!currentUser || row.playerId !== currentUser.id || !leagueId) return;
 
         try {
-            const fixturesRes = await axios.get(`http://localhost:5000/api/v1/leagues/${leagueId}/fixtures`);
+            const fixturesRes = await axios.get(`https://efm-pro.onrender.com/api/v1/leagues/${leagueId}/fixtures`);
             if (!fixturesRes.data.success) return;
 
             const myNextFixture = fixturesRes.data.data.find(f =>
@@ -54,7 +54,7 @@ const LeagueTable = ({ leagueId, currentUser }) => {
                 ? (myNextFixture.playerB?._id || myNextFixture.playerB)
                 : (myNextFixture.playerA?._id || myNextFixture.playerA);
 
-            const userRes = await axios.get(`http://localhost:5000/api/v1/auth/profile/${opponentId}`);
+            const userRes = await axios.get(`https://efm-pro.onrender.com/api/v1/auth/profile/${opponentId}`);
             if (userRes.data.success) {
                 setContactModal({
                     isOpen: true,

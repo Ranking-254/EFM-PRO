@@ -19,7 +19,7 @@ const MatchdayHub = ({ leagueId, currentUser }) => {
 
     const fetchFixtures = async () => {
         try {
-            const res = await axios.get(`http://localhost:5000/api/v1/leagues/${leagueId}/fixtures`);
+            const res = await axios.get(`https://efm-pro.onrender.com/api/v1/leagues/${leagueId}/fixtures`);
             if (res.data.success) {
                 setFixtures(res.data.data);
                 if (res.data.data.length > 0) {

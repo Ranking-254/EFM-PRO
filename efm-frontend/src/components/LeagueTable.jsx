@@ -1,7 +1,10 @@
-// src/components/LeagueTable.jsx
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import PlayerContactModal from './PlayerContactModal';
+
+const API_BASE_URL = window.location.hostname === 'localhost' 
+    ? 'http://localhost:5000/api/v1' 
+    : 'https://efm-pro.onrender.com/api/v1';
 
 const LeagueTable = ({ leagueId, currentUser }) => {
     const [standings, setStandings] = useState([]);
@@ -9,6 +12,8 @@ const LeagueTable = ({ leagueId, currentUser }) => {
     const [error, setError] = useState('');
     const [leagueName, setLeagueName] = useState('');
     const [contactModal, setContactModal] = useState({ isOpen: false, player: null, opponent: null, leagueName: '' });
+
+    const currentUserId = currentUser?.id || currentUser?._id || null;
 
     useEffect(() => {
         if (leagueId) {
@@ -19,7 +24,7 @@ const LeagueTable = ({ leagueId, currentUser }) => {
     const fetchStandings = async (id) => {
         setLoading(true);
         try {
-            const res = await axios.get(`https://efm-pro.onrender.com/api/v1/leagues/${id}/standings`);
+            const res = await axios.get(`${API_BASE_URL}/leagues/${id}/standings`);
             if (res.data.success) {
                 setStandings(res.data.table);
                 setLeagueName(res.data.leagueName);
@@ -33,28 +38,43 @@ const LeagueTable = ({ leagueId, currentUser }) => {
     };
 
     const handleRowClick = async (row) => {
-        if (!currentUser || row.playerId !== currentUser.id || !leagueId) return;
+        // 🛠️ FIX: String wrapper safeguards against Object-ID vs String type mismatches
+        const isMatch = currentUserId && row.playerId && String(row.playerId) === String(currentUserId);
+        
+        if (!isMatch || !leagueId) {
+            console.warn('Click ignored. Verification diagnostics:', { 
+                rowPlayerId: row.playerId, 
+                currentUserId: currentUserId, 
+                leagueId: leagueId 
+            });
+            return;
+        }
 
         try {
-            const fixturesRes = await axios.get(`https://efm-pro.onrender.com/api/v1/leagues/${leagueId}/fixtures`);
+            const fixturesRes = await axios.get(`${API_BASE_URL}/leagues/${leagueId}/fixtures`);
             if (!fixturesRes.data.success) return;
 
-            const myNextFixture = fixturesRes.data.data.find(f =>
-                (f.playerA?._id === currentUser.id || f.playerB?._id === currentUser.id ||
-                 f.playerA === currentUser.id || f.playerB === currentUser.id) &&
-                (f.status === 'pending' || f.status === 'awaiting_confirmation')
-            );
+            // 🛠️ FIX: Cleaned up and standardized cross-checking identifiers with String comparisons
+            const myNextFixture = fixturesRes.data.data.find(f => {
+                const pAId = String(f.playerA?._id || f.playerA || '');
+                const pBId = String(f.playerB?._id || f.playerB || '');
+                const cId = String(currentUserId);
+
+                return (pAId === cId || pBId === cId) && 
+                       (f.status === 'pending' || f.status === 'awaiting_confirmation');
+            });
 
             if (!myNextFixture) {
                 alert('No pending matches found. Check back when your next fixture is scheduled.');
                 return;
             }
 
-            const opponentId = (myNextFixture.playerA?._id || myNextFixture.playerA) === currentUser.id
+            const playerAId = String(myNextFixture.playerA?._id || myNextFixture.playerA || '');
+            const opponentId = playerAId === String(currentUserId)
                 ? (myNextFixture.playerB?._id || myNextFixture.playerB)
                 : (myNextFixture.playerA?._id || myNextFixture.playerA);
 
-            const userRes = await axios.get(`https://efm-pro.onrender.com/api/v1/auth/profile/${opponentId}`);
+            const userRes = await axios.get(`${API_BASE_URL}/auth/profile/${opponentId}`);
             if (userRes.data.success) {
                 setContactModal({
                     isOpen: true,
@@ -101,7 +121,8 @@ const LeagueTable = ({ leagueId, currentUser }) => {
         );
     }
 
-    const isCurrentUserRow = (row) => currentUser && currentUser.id === row.playerId;
+    // 🛠️ FIX: Wrapped in String layer for consistent styling matching logic
+    const isCurrentUserRow = (row) => currentUserId && row.playerId && String(currentUserId) === String(row.playerId);
 
     return (
         <div className="w-full max-w-5xl bg-[#0f131c] border border-slate-900 rounded-3xl p-6 sm:p-10 shadow-2xl space-y-8">

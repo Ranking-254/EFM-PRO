@@ -33,6 +33,7 @@ const LeagueSchema = new mongoose.Schema({
         type: Number,
         default: 1
     },
+    
     // We will store an array of user Object IDs representing players who have joined this specific league
     players: [
         {
@@ -40,6 +41,13 @@ const LeagueSchema = new mongoose.Schema({
             ref: 'User'
         }
     ],
+
+    // 🚀 ADDED: Custom text field for tournament rules and special manager guidelines
+    rules: {
+        type: String,
+        default: ''
+    },
+
     createdAt: {
         type: Date,
         default: Date.now

@@ -1,19 +1,23 @@
 // src/components/Register.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import axios from 'axios';
-import Tesseract from 'tesseract.js';
+
+const API_BASE_URL = window.location.hostname === 'localhost' 
+    ? 'http://localhost:5000/api/v1' 
+    : 'https://efm-pro.onrender.com/api/v1';
 
 const Register = ({ onRegistrationSuccess, onCancel }) => {
     const [formData, setFormData] = useState({
         fullname: '',
         username: '',
         whatsappNumber: '',
-        teamStrength: ''
+        teamStrength: '',
+        screenshot: '' // 🚀 NEW: Holds the base64 image data directly for server upload
     });
     const [statusMessage, setStatusMessage] = useState({ type: '', text: '' });
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [ocrStatus, setOcrStatus] = useState('');
-    const [ocrWorking, setOcrWorking] = useState(false);
+    const [uploadStatus, setUploadStatus] = useState('');
+    const [isProcessingImage, setIsProcessingImage] = useState(false);
 
     const handleInputChange = (e) => {
         setFormData({
@@ -22,89 +26,75 @@ const Register = ({ onRegistrationSuccess, onCancel }) => {
         });
     };
 
-    const runOCR = async (file) => {
-        if (!file) return;
-
-        setOcrWorking(true);
-        setOcrStatus('Reading squad image...');
-        setStatusMessage({ type: '', text: '' });
-
-        try {
-            const result = await Tesseract.recognize(
-                file,
-                'eng',
-                {
-                    logger: (m) => {
-                        if (m.status === 'recognizing text') {
-                            setOcrStatus(`Scanning image... ${Math.round(m.progress * 100)}%`);
-                        } else if (m.status === 'loading language traineddata') {
-                            setOcrStatus('Loading OCR engine...');
-                        }
-                    }
-                }
-            );
-
-            const text = result.data.text;
-            console.log('OCR raw text:', text);
-
-            const cleanedText = text.replace(/\s+/g, ' ').trim();
-
-            const strengthPatterns = [
-                /(?:team\s*strength|team\s*str|squad\s*str|total\s*str|overall|str)[\s:]*(\d{4})/i,
-                /^[\s\n]*(\d{4})[\s\n]*$/m
-            ];
-
-            let detected = null;
-            for (const pattern of strengthPatterns) {
-                const match = cleanedText.match(pattern);
-                if (match) {
-                    detected = parseInt(match[1], 10);
-                    break;
-                }
-            }
-
-            if (!detected) {
-                const allNumbers = Array.from(cleanedText.matchAll(/\b(\d{4})\b/g)).map(m => parseInt(m[1], 10)).filter(n => n >= 2500 && n <= 4000);
-                if (allNumbers.length === 1) {
-                    detected = allNumbers[0];
-                } else if (allNumbers.length > 1) {
-                    const freq = {};
-                    allNumbers.forEach(n => freq[n] = (freq[n] || 0) + 1);
-                    detected = Object.entries(freq).sort((a, b) => b[1] - a[1])[0][0];
-                }
-            }
-
-            if (detected && detected >= 2500 && detected <= 4000) {
-                setFormData(prev => ({ ...prev, teamStrength: detected }));
-                setOcrStatus(`Detected team strength: ${detected}`);
-                setTimeout(() => setOcrStatus(''), 4000);
-            } else {
-                setOcrStatus('Could not detect a valid strength number. Please enter it manually.');
-                setTimeout(() => setOcrStatus(''), 5000);
-            }
-        } catch (err) {
-            console.error('OCR error:', err);
-            setOcrStatus('Image analysis failed. Please enter team strength manually.');
-            setTimeout(() => setOcrStatus(''), 5000);
-        } finally {
-            setOcrWorking(false);
-        }
-    };
-
+    // 🚀 NEW OPTIMIZED FILE PROCESSING FLOW
     const handleImageUpload = (e) => {
         const file = e.target.files?.[0];
-        if (file) {
-            runOCR(file);
-        }
+        if (!file) return;
+
+        setIsProcessingImage(true);
+        setUploadStatus('Optimizing screenshot layout dimensions...');
+        setStatusMessage({ type: '', text: '' });
+
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (event) => {
+            const img = new Image();
+            img.src = event.target.result;
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+
+                // Standard Full HD constraints to minimize Render server network payload chunks
+                const MAX_WIDTH = 1280;
+                const MAX_HEIGHT = 720;
+                let width = img.width;
+                let height = img.height;
+
+                if (width > height) {
+                    if (width > MAX_WIDTH) {
+                        height *= MAX_WIDTH / width;
+                        width = MAX_WIDTH;
+                    }
+                } else {
+                    if (height > MAX_HEIGHT) {
+                        width *= MAX_HEIGHT / height;
+                        height = MAX_HEIGHT;
+                    }
+                }
+
+                canvas.width = width;
+                canvas.height = height;
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'medium';
+                ctx.drawImage(img, 0, 0, width, height);
+
+                // Compress image down to a safe ~150KB string
+                const optimizedBase64 = canvas.toDataURL('image/jpeg', 0.75);
+
+                setFormData(prev => ({ ...prev, screenshot: optimizedBase64 }));
+                setUploadStatus('Screenshot attached successfully! Ready for registration.');
+                setIsProcessingImage(false);
+            };
+        };
+
+        reader.onerror = () => {
+            setUploadStatus('Failed to compile file attachment format.');
+            setIsProcessingImage(false);
+        };
     };
 
-    const handleFormSubmit = async (e) => {
+   const handleFormSubmit = async (e) => {
         e.preventDefault();
         setStatusMessage({ type: '', text: '' });
 
         const strength = parseInt(formData.teamStrength, 10);
         if (isNaN(strength) || strength < 2500 || strength > 4000) {
             setStatusMessage({ type: 'error', text: 'Please provide a valid team strength between 2500 and 4000.' });
+            return;
+        }
+
+        if (!formData.screenshot) {
+            setStatusMessage({ type: 'error', text: 'Please upload a valid squad screenshot for admin verification.' });
             return;
         }
 
@@ -115,22 +105,33 @@ const Register = ({ onRegistrationSuccess, onCancel }) => {
                 fullname: formData.fullname,
                 username: formData.username,
                 whatsappNumber: formData.whatsappNumber,
-                teamStrength: strength
+                teamStrength: strength,
+                screenshot: formData.screenshot 
             };
 
-           const response = await axios.post('https://efm-pro.onrender.com/api/v1/auth/register', payload, {
-    headers: { 'Content-Type': 'application/json' }
-});
-            setStatusMessage({
-                type: 'success',
-                text: response.data.message || 'Registration completed successfully!'
+            const response = await axios.post(`${API_BASE_URL}/auth/register`, payload, {
+                headers: { 'Content-Type': 'application/json' }
             });
 
+            setStatusMessage({
+                type: 'success',
+                text: response.data.message || 'Registration submitted for approval!'
+            });
+
+            // 🚀 SNAPPY TRANSITION: Shorter delay so the user feels an instant navigation pop
             setTimeout(() => {
                 if (onRegistrationSuccess) {
-                    onRegistrationSuccess(response.data.data || { username: formData.username, id: response.data.data?.id });
+                    const responseUser = response.data.data;
+                    
+                    // 🚀 MATCH VALUE: Passes the exact payload structure App.jsx expects to cache
+                    onRegistrationSuccess({
+                        _id: responseUser?.id || responseUser?._id,
+                        username: responseUser?.username || formData.username,
+                        token: responseUser?.token, // ← Essential for bypassing the route guard
+                        approvalStatus: responseUser?.approvalStatus || 'pending'
+                    });
                 }
-            }, 1500);
+            }, 600);
 
         } catch (error) {
             const serverError = error.response?.data?.error || 'Connection error. Ensure your backend is running.';
@@ -139,7 +140,6 @@ const Register = ({ onRegistrationSuccess, onCancel }) => {
             setIsSubmitting(false);
         }
     };
-
     return (
         <div className="w-full max-w-2xl bg-[#121824]/80 backdrop-blur-xl border border-slate-800 rounded-3xl shadow-2xl p-6 sm:p-10 space-y-8 relative">
             {onCancel && (
@@ -158,16 +158,13 @@ const Register = ({ onRegistrationSuccess, onCancel }) => {
 
             {statusMessage.text && (
                 <div className={`p-4 rounded-xl text-sm font-medium border transition-all duration-300 ${
-                    statusMessage.type === 'success'
-                        ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
-                        : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                    statusMessage.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
                 }`}>
                     {statusMessage.text}
                 </div>
             )}
 
             <form onSubmit={handleFormSubmit} className="space-y-6">
-
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                     <div className="space-y-2">
                         <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Username</label>
@@ -196,69 +193,63 @@ const Register = ({ onRegistrationSuccess, onCancel }) => {
                     </div>
                 </div>
 
-                <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">WhatsApp Number</label>
-                    <input
-                        type="text"
-                        name="whatsappNumber"
-                        required
-                        placeholder="e.g. +254712345678"
-                        value={formData.whatsappNumber}
-                        onChange={handleInputChange}
-                        className="w-full bg-[#0b0f17] border border-slate-800 rounded-xl px-4 py-3.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all"
-                    />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                    <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">WhatsApp Number</label>
+                        <input
+                            type="text"
+                            name="whatsappNumber"
+                            required
+                            placeholder="e.g. +254712345678"
+                            value={formData.whatsappNumber}
+                            onChange={handleInputChange}
+                            className="w-full bg-[#0b0f17] border border-slate-800 rounded-xl px-4 py-3.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all"
+                        />
+                    </div>
                 </div>
 
-                <div className="space-y-3 pt-2">
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Squad Screenshot (OCR Auto-Detect)</label>
-                    <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleImageUpload}
-                        disabled={ocrWorking}
-                        className="w-full text-xs text-slate-400 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-slate-800 file:text-white hover:file:bg-slate-700"
-                    />
-                    {ocrWorking && (
-                        <div className="flex items-center gap-2">
-                            <div className="w-3 h-3 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin"></div>
-                            <span className="text-[11px] text-cyan-400 font-bold">{ocrStatus}</span>
-                        </div>
-                    )}
-                    {!ocrWorking && ocrStatus && (
-                        <p className={`text-[11px] font-medium ${ocrStatus.includes('Detected') ? 'text-emerald-400' : 'text-amber-400'}`}>
-                            {ocrStatus}
-                        </p>
-                    )}
-
+                {/* 🚀 FORM SECTION REALIGNMENT */}
+                <div className="space-y-4 border-t border-slate-800/60 pt-4">
                     <div className="space-y-2">
-                        <div className="flex justify-between text-xs font-bold uppercase tracking-wider">
-                            <span className="text-slate-400">Team Strength</span>
-                            <span className="text-[#a3e635] font-mono font-black text-base">
-                                {formData.teamStrength || '—'}
-                            </span>
-                        </div>
+                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">1. Input Team Strength Manually</label>
                         <input
                             type="number"
                             name="teamStrength"
                             min="2500"
                             max="4000"
-                            step="1"
+                            required
                             value={formData.teamStrength}
                             onChange={handleInputChange}
-                            placeholder="Enter manually or detect from image"
+                            placeholder="Check your exact squad rating value"
                             className="w-full bg-[#0b0f17] border border-slate-800 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all font-mono"
                         />
+                    </div>
+
+                    <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">2. Upload Squad Screenshot (Verification Hub)</label>
+                        <input
+                            type="file"
+                            required
+                            accept="image/*"
+                            onChange={handleImageUpload}
+                            disabled={isProcessingImage}
+                            className="w-full text-xs text-slate-400 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-slate-800 file:text-white hover:file:bg-slate-700"
+                        />
+                        {uploadStatus && (
+                            <p className={`text-[11px] font-bold ${formData.screenshot ? 'text-emerald-400' : 'text-cyan-400 animate-pulse'}`}>
+                                {formData.screenshot ? '✓ ' : ''}{uploadStatus}
+                            </p>
+                        )}
                     </div>
                 </div>
 
                 <button
                     type="submit"
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || isProcessingImage}
                     className="w-full mt-4 bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-black text-sm py-4 px-4 rounded-xl shadow-xl shadow-cyan-400/10 hover:shadow-cyan-300/20 active:scale-[0.99] transition-all disabled:opacity-50 disabled:pointer-events-none uppercase tracking-wider"
                 >
-                    {isSubmitting ? 'Verifying Dossier...' : 'Submit Registration'}
+                    {isSubmitting ? 'Processing Registration...' : 'Submit Registration'}
                 </button>
-
             </form>
         </div>
     );

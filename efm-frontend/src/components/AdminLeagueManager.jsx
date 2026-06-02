@@ -10,7 +10,8 @@ const AdminLeagueManager = ({ leagues, onRefresh, onViewLeague }) => {
         maxStrengthLimit: 3100,
         capacity: 10,
         rounds: 0,
-        status: 'recruiting'
+        status: 'recruiting',
+        rules: '',       // 🚀 ADDED: Rules text state holder
     });
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState('');
@@ -44,7 +45,14 @@ const AdminLeagueManager = ({ leagues, onRefresh, onViewLeague }) => {
     };
 
     const resetForm = () => {
-        setFormData({ name: '', maxStrengthLimit: 3100, capacity: 10, status: 'recruiting' });
+        setFormData({ 
+            name: '', 
+            maxStrengthLimit: 3100, 
+            capacity: 10, 
+            rounds: 0, 
+            status: 'recruiting',
+            rules: '',       // 🚀 ADDED: Clear field on reset
+        });
         setEditingLeague(null);
         setShowCreateForm(false);
         setError('');
@@ -56,7 +64,9 @@ const AdminLeagueManager = ({ leagues, onRefresh, onViewLeague }) => {
             name: league.name,
             maxStrengthLimit: league.maxStrengthLimit,
             capacity: league.capacity,
-            status: league.status
+            rounds: league.rounds || 0,
+            status: league.status,
+            rules: league.rules || '',          // 🚀 ADDED: Hydrate rules on edit
         });
         setEditingLeague(league);
         setShowCreateForm(true);
@@ -72,7 +82,14 @@ const AdminLeagueManager = ({ leagues, onRefresh, onViewLeague }) => {
             if (editingLeague) {
                 const res = await axios.put(
                     `https://efm-pro.onrender.com/api/v1/leagues/${editingLeague._id}`,
-                    { name: formData.name, maxStrengthLimit: formData.maxStrengthLimit, capacity: formData.capacity, status: formData.status }
+                    { 
+                        name: formData.name, 
+                        maxStrengthLimit: formData.maxStrengthLimit, 
+                        capacity: formData.capacity, 
+                        rounds: formData.rounds,
+                        status: formData.status,
+                        rules: formData.rules,         // 🚀 ADDED: Payload transmission link
+                    }
                 );
                 if (res.data.success) {
                     setSuccess('League updated successfully!');
@@ -84,7 +101,9 @@ const AdminLeagueManager = ({ leagues, onRefresh, onViewLeague }) => {
                     name: formData.name,
                     maxStrengthLimit: formData.maxStrengthLimit,
                     capacity: formData.capacity,
-                    players: []
+                    rounds: formData.rounds,
+                    players: [],
+                    rules: formData.rules,         // 🚀 ADDED: Payload transmission link
                 });
                 if (res.data.success) {
                     setSuccess('League created successfully!');
@@ -216,26 +235,10 @@ const AdminLeagueManager = ({ leagues, onRefresh, onViewLeague }) => {
                                 />
                                 <p className="text-[10px] text-slate-500">0 = every team plays each other once</p>
                             </div>
-                            <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-3 space-y-1">
-                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Schedule Preview</p>
-                                <p className="text-xs text-slate-300">
-                                    Total matches: <span className="text-cyan-400 font-black">{
-                                        (() => {
-                                            const cap = formData.capacity || 0;
-                                            const r = formData.rounds || 0;
-                                            if (cap < 2) return 0;
-                                            const matchesPerRound = Math.floor(cap / 2);
-                                            const totalRounds = r > 0 ? r : (cap % 2 === 0 ? cap - 1 : cap);
-                                            return matchesPerRound * totalRounds;
-                                        })()
-                                    }</span>
-                                </p>
-                                <p className="text-[10px] text-slate-500">
-                                    {formData.rounds > 0
-                                        ? `${formData.rounds} round(s) × ${Math.floor((formData.capacity || 0) / 2)} match(es)/round`
-                                        : `Full round-robin: ${(formData.capacity || 0) % 2 === 0 ? (formData.capacity || 0) - 1 : (formData.capacity || 0)} rounds`}
-                                </p>
-                            </div>
+                            
+                            {/* 🚀 ADDED: Tournament Scheduled Launch Date Input Element Wrapper */}
+                            
+
                             <div className="space-y-2">
                                 <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Status</label>
                                 <select
@@ -249,6 +252,40 @@ const AdminLeagueManager = ({ leagues, onRefresh, onViewLeague }) => {
                                 </select>
                             </div>
                         </div>
+
+                        {/* 🚀 ADDED: Custom Dynamic Tournament-Wide Rules Textarea Input Platform Component */}
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Tournament Rules & Instructions</label>
+                            <textarea
+                                value={formData.rules}
+                                onChange={(e) => setFormData({ ...formData, rules: e.target.value })}
+                                placeholder="Enter specific pairing formats, connection downtime policies, match speed targets, or registration instructions here..."
+                                rows="4"
+                                className="w-full bg-[#0b0f17] border border-slate-800 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all resize-none custom-scrollbar"
+                            />
+                        </div>
+
+                        <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-3 space-y-1">
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Schedule Preview</p>
+                            <p className="text-xs text-slate-300">
+                                Total matches: <span className="text-cyan-400 font-black">{
+                                    (() => {
+                                        const cap = formData.capacity || 0;
+                                        const r = formData.rounds || 0;
+                                        if (cap < 2) return 0;
+                                        const matchesPerRound = Math.floor(cap / 2);
+                                        const totalRounds = r > 0 ? r : (cap % 2 === 0 ? cap - 1 : cap);
+                                        return matchesPerRound * totalRounds;
+                                    })()
+                                }</span>
+                            </p>
+                            <p className="text-[10px] text-slate-500">
+                                {formData.rounds > 0
+                                    ? `${formData.rounds} round(s) × ${Math.floor((formData.capacity || 0) / 2)} match(es)/round`
+                                    : `Full round-robin: ${(formData.capacity || 0) % 2 === 0 ? (formData.capacity || 0) - 1 : (formData.capacity || 0)} rounds`}
+                            </p>
+                        </div>
+
                         <div className="flex items-center gap-3">
                             <button
                                 type="submit"

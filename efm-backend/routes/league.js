@@ -13,8 +13,9 @@ const generateRoundRobin = require('../utils/scheduler');
 // ========================================================
 router.get('/recruiting', async (req, res) => {
     try {
+        // 🚀 UPDATED: Added 'rules' to the select string
         const leagues = await League.find({ status: 'recruiting' })
-            .select('name maxStrengthLimit capacity players createdAt');
+            .select('name maxStrengthLimit capacity players rules createdAt');
         
         const leaguesWithMeta = leagues.map(league => ({
             _id: league._id,
@@ -23,6 +24,7 @@ router.get('/recruiting', async (req, res) => {
             capacity: league.capacity,
             slotsFilled: league.players.length,
             status: league.status,
+            rules: league.rules || '', // 🚀 UPDATED: Included in map
             createdAt: league.createdAt
         }));
 
@@ -38,8 +40,9 @@ router.get('/recruiting', async (req, res) => {
 
 router.get('/active', async (req, res) => {
     try {
+        // 🚀 UPDATED: Added 'rules' to the select string
         const leagues = await League.find({ status: 'active' })
-            .select('name maxStrengthLimit capacity players currentMatchday createdAt');
+            .select('name maxStrengthLimit capacity players currentMatchday rules createdAt');
         
         const leaguesWithMeta = leagues.map(league => ({
             _id: league._id,
@@ -49,6 +52,7 @@ router.get('/active', async (req, res) => {
             slotsFilled: league.players.length,
             status: league.status,
             currentMatchday: league.currentMatchday,
+            rules: league.rules || '', // 🚀 UPDATED: Included in map
             createdAt: league.createdAt
         }));
 
@@ -64,8 +68,9 @@ router.get('/active', async (req, res) => {
 
 router.get('/all', async (req, res) => {
     try {
+        // 🚀 UPDATED: Added 'rules' to the select string
         const leagues = await League.find({})
-            .select('name maxStrengthLimit capacity players status currentMatchday createdAt');
+            .select('name maxStrengthLimit capacity players status currentMatchday rules createdAt');
         
         const leaguesWithMeta = leagues.map(league => ({
             _id: league._id,
@@ -75,6 +80,7 @@ router.get('/all', async (req, res) => {
             slotsFilled: league.players.length,
             status: league.status,
             currentMatchday: league.currentMatchday || 1,
+            rules: league.rules || '', // 🚀 UPDATED: Included in map
             createdAt: league.createdAt
         }));
 
@@ -90,8 +96,9 @@ router.get('/all', async (req, res) => {
 
 router.get('/my-leagues/:userId', async (req, res) => {
     try {
+        // 🚀 UPDATED: Added 'rules' to the select string
         const userLeagues = await League.find({ players: req.params.userId })
-            .select('name maxStrengthLimit capacity players status currentMatchday createdAt');
+            .select('name maxStrengthLimit capacity players status currentMatchday rules createdAt');
 
         const leaguesWithMeta = userLeagues.map(league => ({
             _id: league._id,
@@ -101,6 +108,7 @@ router.get('/my-leagues/:userId', async (req, res) => {
             slotsFilled: league.players.length,
             status: league.status,
             currentMatchday: league.currentMatchday || 1,
+            rules: league.rules || '', // 🚀 UPDATED: Included in map
             createdAt: league.createdAt
         }));
 
@@ -114,6 +122,26 @@ router.get('/my-leagues/:userId', async (req, res) => {
     }
 });
 
+// @desc    Get all leagues a specific user has joined
+// @route   GET /api/v1/leagues/user/:userId
+router.get('/user/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        
+        // 🚀 UPDATED: Added 'rules' to the select string
+        const userLeagues = await League.find({ 
+            players: userId 
+        }).select('name status capacity slotsFilled maxStrengthLimit currentMatchday rules');
+
+        res.status(200).json({
+            success: true,
+            data: userLeagues
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // ========================================================
 // @desc    Create a new league tier (Admin action)
 // @route   POST /api/v1/leagues
@@ -121,6 +149,7 @@ router.get('/my-leagues/:userId', async (req, res) => {
 // ========================================================
 router.post('/', async (req, res) => {
     try {
+        // Since you pass req.body, mongoose directly matches 'rules' from your schema structure
         const league = await League.create(req.body);
         res.status(201).json({
             success: true,
@@ -168,10 +197,8 @@ router.post('/:id/join', async (req, res) => {
             systemMessage = `League is officially full! Status flipped to ACTIVE, and full season fixtures have been generated automatically.`;
         }
 
-        // Save the state of the league FIRST
         await league.save();
 
-        // Generate and bulk insert matches ONLY after the league successfully saves
         if (triggerScheduleGeneration) {
             const schedulePlan = generateRoundRobin(league.players, league.rounds || 0);
 
@@ -195,6 +222,7 @@ router.post('/:id/join', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
+
 // ========================================================
 // @desc    Get all fixtures for a league (with player details)
 // @route   GET /api/v1/leagues/:id/fixtures
@@ -202,7 +230,6 @@ router.post('/:id/join', async (req, res) => {
 // ========================================================
 router.get('/:id/fixtures', async (req, res) => {
     try {
-        // We use .populate() to automatically replace the user ObjectIDs with real user profiles
         const fixtures = await Fixture.find({ leagueId: req.params.id })
             .populate('playerA', 'username whatsappNumber efootballId')
             .populate('playerB', 'username whatsappNumber efootballId')
@@ -242,38 +269,28 @@ router.post('/fixtures/:fixtureId/submit', async (req, res) => {
             return res.status(403).json({ success: false, error: "You are not a participant in this match." });
         }
 
-        // 1. Record individual claims cleanly
         if (isPlayerA) {
-            fixture.playerASubmittedScore = yourScore;     // What A says A scored
-            fixture.playerBScore = opponentScore;          // What A says B scored
+            fixture.playerASubmittedScore = yourScore;
+            fixture.playerBScore = opponentScore;
         } else if (isPlayerB) {
-            fixture.playerBSubmittedScore = yourScore;     // What B says B scored
-            fixture.playerAScore = opponentScore;          // What B says A scored
+            fixture.playerBSubmittedScore = yourScore;
+            fixture.playerAScore = opponentScore;
         }
 
-        // 2. TRUST ENGINE MUTUAL VERIFICATION
-        // Check if both players have logged a submission
         if (fixture.playerASubmittedScore !== null && fixture.playerBSubmittedScore !== null) {
-            
-            // Mirror Cross-Check:
-            // Does what A claims A scored equal what B claims A conceded?
-            // AND does what B claims B scored equal what A claims B conceded?
             const doesPlayerAAlign = fixture.playerASubmittedScore === fixture.playerAScore;
             const doesPlayerBAlign = fixture.playerBSubmittedScore === fixture.playerBScore;
 
             if (doesPlayerAAlign && doesPlayerBAlign) {
                 fixture.status = 'confirmed';
-                // TODO: Trigger League Table Standing Recalculation Here!
             } else {
                 fixture.status = 'disputed';
             }
         } else {
-            // Only one user has submitted so far
             fixture.status = 'awaiting_confirmation';
         }
 
         await fixture.save();
-
         await checkAndCompleteLeague(fixture.leagueId);
 
         res.status(200).json({
@@ -298,13 +315,11 @@ router.get('/:id/standings', async (req, res) => {
             return res.status(404).json({ success: false, error: "League not found." });
         }
 
-        // Fetch only the finalized matches for this league
         const confirmedFixtures = await Fixture.find({ 
             leagueId: req.params.id, 
             status: 'confirmed' 
         });
 
-        // 1. Initialize a clean scorecard map for every player in the league
         const standingsMap = {};
         league.players.forEach(player => {
             standingsMap[player._id.toString()] = {
@@ -321,38 +336,30 @@ router.get('/:id/standings', async (req, res) => {
             };
         });
 
-        // 2. Loop through every confirmed match and aggregate the stats
         confirmedFixtures.forEach(match => {
             const idA = match.playerA.toString();
             const idB = match.playerB.toString();
             const scoreA = match.playerAScore;
             const scoreB = match.playerBScore;
 
-            // Ensure players exist in the scorecard map (edge-case safety check)
             if (standingsMap[idA] && standingsMap[idB]) {
-                // Update matches played
                 standingsMap[idA].played += 1;
                 standingsMap[idB].played += 1;
 
-                // Update raw goals
                 standingsMap[idA].goalsFor += scoreA;
                 standingsMap[idA].goalsAgainst += scoreB;
                 standingsMap[idB].goalsFor += scoreB;
                 standingsMap[idB].goalsAgainst += scoreA;
 
-                // Evaluate Match Outcomes
                 if (scoreA > scoreB) {
-                    // Player A Wins
                     standingsMap[idA].won += 1;
                     standingsMap[idA].points += 3;
                     standingsMap[idB].lost += 1;
                 } else if (scoreB > scoreA) {
-                    // Player B Wins
                     standingsMap[idB].won += 1;
                     standingsMap[idB].points += 3;
                     standingsMap[idA].lost += 1;
                 } else {
-                    // It's a Draw
                     standingsMap[idA].drawn += 1;
                     standingsMap[idA].points += 1;
                     standingsMap[idB].drawn += 1;
@@ -361,13 +368,11 @@ router.get('/:id/standings', async (req, res) => {
             }
         });
 
-        // 3. Convert scorecard map to an array and calculate final Goal Differences
         const standingsArray = Object.values(standingsMap).map((row) => {
             row.goalDifference = row.goalsFor - row.goalsAgainst;
             return row;
         });
 
-        // 4. Sort the table arrays (Standard Football Hierarchy: Points -> GD -> GF)
         standingsArray.sort((a, b) => {
             if (b.points !== a.points) return b.points - a.points;
             if (b.goalDifference !== a.goalDifference) return b.goalDifference - a.goalDifference;
@@ -384,6 +389,7 @@ router.get('/:id/standings', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
+
 // ========================================================
 // @desc    Admin override to resolve disputed matches
 // @route   PATCH /api/v1/leagues/fixtures/:fixtureId/resolve
@@ -412,7 +418,6 @@ router.patch('/fixtures/:fixtureId/resolve', async (req, res) => {
         fixture.status = 'confirmed';
 
         await fixture.save();
-
         await checkAndCompleteLeague(fixture.leagueId);
 
         res.status(200).json({
@@ -428,7 +433,8 @@ router.patch('/fixtures/:fixtureId/resolve', async (req, res) => {
 
 router.put('/:id', async (req, res) => {
     try {
-        const { name, maxStrengthLimit, capacity, status, rounds } = req.body;
+        // 🚀 UPDATED: Extracted 'rules' from req.body
+        const { name, maxStrengthLimit, capacity, status, rounds, rules } = req.body;
         const league = await League.findById(req.params.id);
 
         if (!league) {
@@ -451,6 +457,10 @@ router.put('/:id', async (req, res) => {
                 return res.status(400).json({ success: false, error: "Rounds must be a whole number (0 = full round-robin)." });
             }
             league.rounds = rounds;
+        }
+        // 🚀 ADDED: Update the rules field when modified
+        if (rules !== undefined) {
+            league.rules = rules;
         }
 
         await league.save();

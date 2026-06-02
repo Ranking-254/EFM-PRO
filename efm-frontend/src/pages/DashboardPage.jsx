@@ -2,6 +2,11 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
+// Fallback to production API link if running live on Vercel
+const API_BASE_URL = window.location.hostname === 'localhost' 
+    ? 'http://localhost:5000/api/v1' 
+    : 'https://efm-pro.onrender.com/api/v1';
+
 const DashboardPage = ({ currentUser, onNavigate }) => {
     const [profile, setProfile] = useState(null);
     const [leagues, setLeagues] = useState([]);
@@ -9,11 +14,14 @@ const DashboardPage = ({ currentUser, onNavigate }) => {
     const [saving, setSaving] = useState(false);
     const [uploading, setUploading] = useState(false);
 
+    // Resolve MongoDB _id vs standard id variance safely
+    const currentUserId = currentUser?.id || currentUser?._id;
+
     const [form, setForm] = useState({
         fullname: '',
         username: '',
         whatsappNumber: '',
-        efootballId: '',
+        
         teamStrength: 3100,
         squadImage: ''
     });
@@ -22,15 +30,17 @@ const DashboardPage = ({ currentUser, onNavigate }) => {
     const [editing, setEditing] = useState(false);
 
     useEffect(() => {
-        if (currentUser?.id) {
+        if (currentUserId) {
             fetchProfile();
             fetchMyLeagues();
+        } else {
+            setLoading(false);
         }
-    }, [currentUser]);
+    }, [currentUser, currentUserId]);
 
     const fetchProfile = async () => {
         try {
-            const res = await axios.get(`http://localhost:5000/api/v1/auth/profile/${currentUser.id}`);
+            const res = await axios.get(`${API_BASE_URL}/auth/profile/${currentUserId}`);
             if (res.data.success) {
                 const data = res.data.data;
                 setProfile(data);
@@ -38,7 +48,6 @@ const DashboardPage = ({ currentUser, onNavigate }) => {
                     fullname: data.fullname || '',
                     username: data.username || '',
                     whatsappNumber: data.whatsappNumber || '',
-                    efootballId: data.efootballId || '',
                     teamStrength: data.teamStrength || 3100,
                     squadImage: data.squadImage || ''
                 });
@@ -52,7 +61,7 @@ const DashboardPage = ({ currentUser, onNavigate }) => {
 
     const fetchMyLeagues = async () => {
         try {
-            const res = await axios.get(`http://localhost:5000/api/v1/leagues/my-leagues/${currentUser.id}`);
+            const res = await axios.get(`${API_BASE_URL}/leagues/my-leagues/${currentUserId}`);
             if (res.data.success) {
                 setLeagues(res.data.data);
             }
@@ -79,12 +88,12 @@ const DashboardPage = ({ currentUser, onNavigate }) => {
                 const base64data = reader.result;
                 try {
                     const res = await axios.post(
-                        `http://localhost:5000/api/v1/auth/profile/${currentUser.id}/upload-image`,
+                        `${API_BASE_URL}/auth/profile/${currentUserId}/upload-image`,
                         { image: base64data }
                     );
                     if (res.data.success) {
-                        setForm({ ...form, squadImage: res.data.data.squadImage });
-                        setProfile({ ...profile, squadImage: res.data.data.squadImage });
+                        setForm(prev => ({ ...prev, squadImage: res.data.data.squadImage }));
+                        setProfile(prev => ({ ...prev, squadImage: res.data.data.squadImage }));
                         setMessage({ type: 'success', text: 'Image uploaded successfully!' });
                     }
                 } catch (err) {
@@ -111,12 +120,11 @@ const DashboardPage = ({ currentUser, onNavigate }) => {
 
         try {
             const res = await axios.put(
-                `http://localhost:5000/api/v1/auth/profile/${currentUser.id}`,
+                `${API_BASE_URL}/auth/profile/${currentUserId}`,
                 {
                     fullname: form.fullname,
                     username: form.username,
                     whatsappNumber: form.whatsappNumber,
-                    efootballId: form.efootballId,
                     teamStrength: form.teamStrength,
                     squadImage: form.squadImage
                 }
@@ -176,13 +184,13 @@ const DashboardPage = ({ currentUser, onNavigate }) => {
                             {form.squadImage ? (
                                 <img src={form.squadImage} alt="Squad" className="w-full h-full object-cover" />
                             ) : (
-                                <span className="text-3xl">📸</span>
+                                <span className="text-3xl">😎</span>
                             )}
                         </div>
                         {!editing ? (
                             <div>
-                                <h4 className="text-base font-black text-white">{profile?.username}</h4>
-                                <p className="text-xs text-slate-400">STR {profile?.teamStrength}</p>
+                                <h4 className="text-base font-black text-white">{profile?.username || currentUser?.username}</h4>
+                                <p className="text-xs text-slate-400">STR {profile?.teamStrength || '—'}</p>
                             </div>
                         ) : (
                             <div className="space-y-3 text-left">
@@ -226,21 +234,12 @@ const DashboardPage = ({ currentUser, onNavigate }) => {
                     <div className="bg-[#0f131c] border border-slate-800 rounded-2xl p-6 space-y-5">
                         <div className="flex items-center justify-between">
                             <h4 className="text-base font-black text-white">Profile Details</h4>
-                            {!editing ? (
-                                <button
-                                    onClick={() => setEditing(true)}
-                                    className="bg-slate-900 hover:bg-slate-800 text-white border border-slate-800 text-[11px] font-black uppercase tracking-wider py-2 px-3 rounded-lg transition-all"
-                                >
-                                    Edit
-                                </button>
-                            ) : (
-                                <button
-                                    onClick={() => setEditing(false)}
-                                    className="bg-slate-900 hover:bg-slate-800 text-white border border-slate-800 text-[11px] font-black uppercase tracking-wider py-2 px-3 rounded-lg transition-all"
-                                >
-                                    Cancel
-                                </button>
-                            )}
+                            <button
+                                onClick={() => setEditing(!editing)}
+                                className="bg-slate-900 hover:bg-slate-800 text-white border border-slate-800 text-[11px] font-black uppercase tracking-wider py-2 px-3 rounded-lg transition-all"
+                            >
+                                {editing ? 'Cancel' : 'Edit'}
+                            </button>
                         </div>
 
                         {!editing ? (
@@ -257,7 +256,7 @@ const DashboardPage = ({ currentUser, onNavigate }) => {
                                 <div className="h-px bg-slate-800"></div>
                                 <div className="flex justify-between text-sm">
                                     <span className="text-slate-400">eFootball ID</span>
-                                    <span className="text-white font-mono font-bold">{profile?.efootballId || '—'}</span>
+                                    <span className="text-white font-mono font-bold">{profile?.efootballId || 'Not Added'}</span>
                                 </div>
                                 <div className="h-px bg-slate-800"></div>
                                 <div className="flex justify-between text-sm">
@@ -293,6 +292,7 @@ const DashboardPage = ({ currentUser, onNavigate }) => {
                                         <input
                                             type="text"
                                             name="efootballId"
+                                            placeholder="Enter eFootball Owner ID"
                                             value={form.efootballId}
                                             onChange={handleChange}
                                             className="w-full bg-[#0b0f17] border border-slate-800 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all"
@@ -316,7 +316,7 @@ const DashboardPage = ({ currentUser, onNavigate }) => {
                                         type="range"
                                         name="teamStrength"
                                         min="2500"
-                                        max="3600"
+                                        max="4000"
                                         step="5"
                                         value={form.teamStrength}
                                         onChange={handleChange}

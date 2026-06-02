@@ -1,14 +1,20 @@
-// src/components/PlayerContactModal.jsx
 import React from 'react';
 
 const PlayerContactModal = ({ isOpen, onClose, player, opponent, leagueName }) => {
     if (!isOpen || !player) return null;
 
     const buildWhatsAppLink = () => {
-        const phone = (opponent?.whatsappNumber || '').replace(/\D/g, '');
+        let phone = (opponent?.whatsappNumber || '').replace(/\D/g, '');
         if (!phone) return null;
+
+        // 🛠️ FIX: If the number starts with a local '0', swap it with your country code.
+        // Example assumes US (+1). Replace '1' with your country prefix (e.g., '44' for UK, '254' for Kenya)
+        if (phone.startsWith('0')) {
+            phone = '254' + phone.substring(1); 
+        }
+
         const message = encodeURIComponent(
-            `Hey ${opponent?.username || 'Opponent'}! This is ${player.username} from ${leagueName || 'EFM-PRO'}. Let's coordinate our upcoming match! 🔥`
+            `Hey ${opponent?.username || 'Opponent'}! This is ${player.username} from ${leagueName || 'EFM-PRO'}. Let's coordinate our upcoming efootball match! 🔥`
         );
         return `https://wa.me/${phone}?text=${message}`;
     };

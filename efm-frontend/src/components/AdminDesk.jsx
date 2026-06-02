@@ -2,10 +2,16 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import AdminLeagueManager from './AdminLeagueManager';
+import AdminApprovalsManager from './AdminApprovalsManager'; 
+
+const API_BASE_URL = window.location.hostname === 'localhost' 
+    ? 'http://localhost:5000/api/v1' 
+    : 'https://efm-pro.onrender.com/api/v1';
 
 const AdminDesk = ({ leagueId, onSelectLeague }) => {
     const [activeTab, setActiveTab] = useState('leagues');
     const [disputedFixtures, setDisputedFixtures] = useState([]);
+    const [pendingUsersCount, setPendingUsersCount] = useState(0); 
     const [loading, setLoading] = useState(true);
     const [resolving, setResolving] = useState(null);
     const [error, setError] = useState('');
@@ -20,11 +26,13 @@ const AdminDesk = ({ leagueId, onSelectLeague }) => {
 
     useEffect(() => {
         fetchLeagues();
+        fetchPendingUsersCount(); 
     }, []);
 
     const fetchLeagues = async () => {
         try {
-            const res = await axios.get('https://efm-pro.onrender.com/api/v1/leagues/all');
+            // 🚀 FIXED: Pointed back to the correct league endpoint route instead of pending reserve users
+            const res = await axios.get(`${API_BASE_URL}/leagues/all`);
             if (res.data.success) {
                 setLeagues(res.data.data);
             }
@@ -36,15 +44,25 @@ const AdminDesk = ({ leagueId, onSelectLeague }) => {
         }
     };
 
+    const fetchPendingUsersCount = async () => {
+        try {
+            const res = await axios.get(`${API_BASE_URL}/admin/pending-users`);
+            if (res.data.success) {
+                setPendingUsersCount(res.data.data.length);
+            }
+        } catch (err) {
+            console.error('Pending count sync failure:', err.message);
+        }
+    };
+
     const fetchDisputedFixtures = async () => {
         if (!leagueId) {
             setDisputedFixtures([]);
             setLoading(false);
             return;
         }
-
         try {
-            const fixturesRes = await axios.get(`https://efm-pro.onrender.com/api/v1/leagues/${leagueId}/fixtures`);
+            const fixturesRes = await axios.get(`${API_BASE_URL}/leagues/${leagueId}/fixtures`);
             if (fixturesRes.data.success) {
                 const disputed = fixturesRes.data.data.filter(f => f.status === 'disputed');
                 setDisputedFixtures(disputed);
@@ -80,11 +98,8 @@ const AdminDesk = ({ leagueId, onSelectLeague }) => {
 
         try {
             const res = await axios.patch(
-                `https://efm-pro.onrender.com/api/v1/leagues/fixtures/${resolveForm.fixtureId}/resolve`,
-                {
-                    playerAScore: scoreA,
-                    playerBScore: scoreB
-                }
+                `${API_BASE_URL}/leagues/fixtures/${resolveForm.fixtureId}/resolve`,
+                { playerAScore: scoreA, playerBScore: scoreB }
             );
 
             if (res.data.success) {
@@ -101,11 +116,7 @@ const AdminDesk = ({ leagueId, onSelectLeague }) => {
     };
 
     const openResolveForm = (fixture) => {
-        setResolveForm({
-            fixtureId: fixture._id,
-            playerAScore: '',
-            playerBScore: ''
-        });
+        setResolveForm({ fixtureId: fixture._id, playerAScore: '', playerBScore: '' });
     };
 
     const handleViewLeague = (leagueId) => {
@@ -130,29 +141,38 @@ const AdminDesk = ({ leagueId, onSelectLeague }) => {
         <div className="space-y-6">
             <div className="bg-amber-400/5 border border-amber-400/20 rounded-2xl p-4">
                 <h4 className="text-sm font-black text-amber-400 uppercase tracking-wider">⚖️ Administrative Resolution Desk</h4>
-                <p className="text-xs text-slate-400 mt-1">Manage tournaments, leagues, members, and resolve disputes.</p>
+                <p className="text-xs text-slate-400 mt-1">Manage tournaments, leagues, verify members, and resolve disputes.</p>
             </div>
 
-            <div className="flex items-center gap-3 bg-[#0f131c] border border-slate-800 rounded-xl p-1.5">
+            {/* --- 🛠️ TAB NAVIGATION HUD --- */}
+            <div className="flex flex-col sm:flex-row items-stretch gap-2 bg-[#0f131c] border border-slate-800 rounded-xl p-1.5">
                 <button
                     onClick={() => setActiveTab('leagues')}
                     className={`flex-1 text-xs font-black uppercase tracking-wider py-3 rounded-lg transition-all ${
-                        activeTab === 'leagues'
-                            ? 'bg-cyan-400 text-slate-950 shadow-lg shadow-cyan-400/10'
-                            : 'text-slate-400 hover:text-white'
+                        activeTab === 'leagues' ? 'bg-cyan-400 text-slate-950 shadow-lg' : 'text-slate-400 hover:text-white'
                     }`}
                 >
                     Tournament Manager
                 </button>
+                
                 <button
-                    onClick={() => {
-                        setActiveTab('disputes');
-                        if (leagueId) fetchDisputedFixtures();
-                    }}
+                    onClick={() => { setActiveTab('approvals'); fetchPendingUsersCount(); }}
+                    className={`flex-1 text-xs font-black uppercase tracking-wider py-3 rounded-lg transition-all flex items-center justify-center gap-2 ${
+                        activeTab === 'approvals' ? 'bg-emerald-500 text-white shadow-lg' : 'text-slate-400 hover:text-white'
+                    }`}
+                >
+                    Player Approvals
+                    {pendingUsersCount > 0 && (
+                        <span className="bg-white text-emerald-950 text-[10px] px-2 py-0.5 rounded-full font-black tracking-normal animate-pulse">
+                            {pendingUsersCount} New
+                        </span>
+                    )}
+                </button>
+
+                <button
+                    onClick={() => { setActiveTab('disputes'); if (leagueId) fetchDisputedFixtures(); }}
                     className={`flex-1 text-xs font-black uppercase tracking-wider py-3 rounded-lg transition-all ${
-                        activeTab === 'disputes'
-                            ? 'bg-amber-400 text-slate-950 shadow-lg shadow-amber-400/10'
-                            : 'text-slate-400 hover:text-white'
+                        activeTab === 'disputes' ? 'bg-amber-400 text-slate-950 shadow-lg' : 'text-slate-400 hover:text-white'
                     }`}
                 >
                     Dispute Resolution
@@ -164,23 +184,15 @@ const AdminDesk = ({ leagueId, onSelectLeague }) => {
                 </button>
             </div>
 
-            {error && (
-                <div className="p-4 rounded-xl text-sm font-medium border bg-rose-500/10 border-rose-500/20 text-rose-400">
-                    {error}
-                </div>
-            )}
-            {success && (
-                <div className="p-4 rounded-xl text-sm font-medium border bg-emerald-500/10 border-emerald-500/20 text-emerald-400">
-                    {success}
-                </div>
-            )}
+            {error && <div className="p-4 rounded-xl text-sm font-medium border bg-rose-500/10 border-rose-500/20 text-rose-400">{error}</div>}
+            {success && <div className="p-4 rounded-xl text-sm font-medium border bg-emerald-500/10 border-emerald-500/20 text-emerald-400">{success}</div>}
 
             {activeTab === 'leagues' && (
-                <AdminLeagueManager
-                    leagues={leagues}
-                    onRefresh={fetchLeagues}
-                    onViewLeague={handleViewLeague}
-                />
+                <AdminLeagueManager leagues={leagues} onRefresh={fetchLeagues} onViewLeague={handleViewLeague} />
+            )}
+
+            {activeTab === 'approvals' && (
+                <AdminApprovalsManager onCounterChange={fetchPendingUsersCount} />
             )}
 
             {activeTab === 'disputes' && (
@@ -189,10 +201,7 @@ const AdminDesk = ({ leagueId, onSelectLeague }) => {
                         <div className="bg-[#0f131c] border border-slate-800 rounded-2xl p-8 text-center">
                             <span className="text-4xl mb-3 block">📋</span>
                             <p className="text-sm text-slate-400">Select a league from Tournament Manager to view disputes.</p>
-                            <button
-                                onClick={() => setActiveTab('leagues')}
-                                className="mt-4 bg-cyan-400 hover:bg-cyan-300 text-slate-950 text-xs font-black uppercase tracking-wider py-2.5 px-5 rounded-xl transition-all"
-                            >
+                            <button onClick={() => setActiveTab('leagues')} className="mt-4 bg-cyan-400 hover:bg-cyan-300 text-slate-950 text-xs font-black uppercase tracking-wider py-2.5 px-5 rounded-xl transition-all">
                                 Go to Tournament Manager
                             </button>
                         </div>
@@ -214,7 +223,7 @@ const AdminDesk = ({ leagueId, onSelectLeague }) => {
                                                     value={resolveForm.playerAScore}
                                                     onChange={(e) => setResolveForm({ ...resolveForm, playerAScore: e.target.value })}
                                                     placeholder="0"
-                                                    className="w-full bg-[#0b0f17] border border-amber-400/30 rounded-xl px-4 py-3 text-center text-lg font-black text-white font-mono placeholder-slate-600 focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition-all"
+                                                    className="w-full bg-[#0b0f17] border border-amber-400/30 rounded-xl px-4 py-3 text-center text-lg font-black text-white font-mono focus:outline-none focus:border-amber-400 transition-all"
                                                     autoFocus
                                                 />
                                             </div>
@@ -226,15 +235,11 @@ const AdminDesk = ({ leagueId, onSelectLeague }) => {
                                                     value={resolveForm.playerBScore}
                                                     onChange={(e) => setResolveForm({ ...resolveForm, playerBScore: e.target.value })}
                                                     placeholder="0"
-                                                    className="w-full bg-[#0b0f17] border border-amber-400/30 rounded-xl px-4 py-3 text-center text-lg font-black text-white font-mono placeholder-slate-600 focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition-all"
+                                                    className="w-full bg-[#0b0f17] border border-amber-400/30 rounded-xl px-4 py-3 text-center text-lg font-black text-white font-mono focus:outline-none focus:border-amber-400 transition-all"
                                                 />
                                             </div>
                                         </div>
-                                        <button
-                                            type="submit"
-                                            disabled={resolving === resolveForm.fixtureId}
-                                            className="w-full bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-sm py-4 rounded-xl shadow-lg shadow-amber-400/10 active:scale-[0.99] transition-all disabled:opacity-50 disabled:pointer-events-none uppercase tracking-wider"
-                                        >
+                                        <button type="submit" disabled={resolving === resolveForm.fixtureId} className="w-full bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-sm py-4 rounded-xl shadow-lg transition-all disabled:opacity-50 uppercase tracking-wider">
                                             {resolving === resolveForm.fixtureId ? 'Resolving...' : 'Lock Scoreline & Unlock Standings'}
                                         </button>
                                     </form>
@@ -261,35 +266,15 @@ const AdminDesk = ({ leagueId, onSelectLeague }) => {
                                         return (
                                             <div key={fixture._id} className="bg-[#0f131c] border border-rose-500/20 rounded-2xl p-5 space-y-4">
                                                 <div className="flex items-center justify-between">
-                                                    <span className="text-[10px] font-bold text-rose-400 uppercase tracking-wider">
-                                                        Matchday {fixture.matchday}
-                                                    </span>
-                                                    <span className="px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider border bg-rose-500/10 text-rose-400 border-rose-500/20">
-                                                        DISPUTED
-                                                    </span>
+                                                    <span className="text-[10px] font-bold text-rose-400 uppercase tracking-wider">Matchday {fixture.matchday}</span>
+                                                    <span className="px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider border border-rose-500/20 bg-rose-500/10 text-rose-400">DISPUTED</span>
                                                 </div>
-
                                                 <div className="flex items-center justify-between">
-                                                    <div className="text-sm font-bold text-white">
-                                                        {playerA.username}
-                                                        <span className="text-rose-400 text-xs ml-2 font-mono">
-                                                            claimed {fixture.playerASubmittedScore !== null ? fixture.playerASubmittedScore : '?'}
-                                                        </span>
-                                                    </div>
+                                                    <div className="text-sm font-bold text-white">{playerA.username}<span className="text-rose-400 text-xs ml-2 font-mono">claimed {fixture.playerASubmittedScore !== null ? fixture.playerASubmittedScore : '?'}</span></div>
                                                     <span className="text-slate-500 px-3">VS</span>
-                                                    <div className="text-sm font-bold text-white text-right">
-                                                        {playerB.username}
-                                                        <span className="text-rose-400 text-xs ml-2 font-mono">
-                                                            claimed {fixture.playerBSubmittedScore !== null ? fixture.playerBSubmittedScore : '?'}
-                                                        </span>
-                                                    </div>
+                                                    <div className="text-sm font-bold text-white text-right">{playerB.username}<span className="text-rose-400 text-xs ml-2 font-mono">claimed {fixture.playerBSubmittedScore !== null ? fixture.playerBSubmittedScore : '?'}</span></div>
                                                 </div>
-
-                                                <button
-                                                    onClick={() => openResolveForm(fixture)}
-                                                    disabled={isResolving}
-                                                    className="w-full bg-amber-400/10 hover:bg-amber-400/20 text-amber-400 border border-amber-400/30 text-xs font-black uppercase tracking-wider py-3 rounded-xl transition-all disabled:opacity-50 disabled:pointer-events-none"
-                                                >
+                                                <button onClick={() => openResolveForm(fixture)} disabled={isResolving} className="w-full bg-amber-400/10 hover:bg-amber-400/20 text-amber-400 border border-amber-400/30 text-xs font-black uppercase tracking-wider py-3 rounded-xl transition-all disabled:opacity-50">
                                                     {isResolving ? 'Processing...' : '⚖️ Override & Resolve'}
                                                 </button>
                                             </div>

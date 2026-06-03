@@ -1,14 +1,11 @@
 {
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
-  ],
   "headers": [
     {
       "source": "/(.*)",
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; worker-src 'self' blob: https://cdn.jsdelivr.net;"
+          "value": "default-src 'self'; connect-src 'self' https://efm-pro.onrender.com; font-src 'self' data:; img-src 'self' data: blob: res.cloudinary.com; script-src 'self' 'unsafe-inline' 'unsafe-eval';"
         }
       ]
     }

@@ -25,32 +25,21 @@ const allowedOrigins = [
 
 // 🚀 UNIFIED CORS MIDDLEWARE LAYER (Must be declared before body-parsers and routes)
 app.use(cors({
-    origin: function (origin, callback) {
-        // Allow requests with no origin (like mobile workflows, Postman, or server-to-server calls)
-        if (!origin) return callback(null, true);
-        
-        if (allowedOrigins.indexOf(origin) === -1) {
-            const msg = `The CORS policy for this site does not allow access from the specified Origin: ${origin}`;
-            return callback(new Error(msg), false);
-        }
-        return callback(null, true);
-    },
+    origin: ["https://efm-pro.vercel.app", "http://localhost:5173"], // Your production and development frontend links
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 }));
 
-// Configure Helmet with custom Content Security Policy directives to stop browser blocks
+// 2. Adjust Helmet to prevent it from interfering with cross-origin assets and preflights
 app.use(
     helmet({
+        // This stops helmet from blocking images/assets crossing domains
+        crossOriginResourcePolicy: { policy: "cross-origin" }, 
         contentSecurityPolicy: {
             directives: {
                 ...helmet.contentSecurityPolicy.getDefaultDirectives(),
-                // Allow frontend applications to connect to your local dev and live Render servers
                 "connect-src": ["'self'", "https://efm-pro.onrender.com", "http://localhost:5000"],
-                // Allow external fonts (like Google Fonts) to load cleanly
                 "font-src": ["'self'", "https://fonts.gstatic.com", "data:", "*"],
-                // Allow verification images to render from Cloudinary
                 "img-src": ["'self'", "data:", "https://res.cloudinary.com", "*"],
             },
         },

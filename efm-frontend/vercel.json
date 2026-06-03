@@ -5,9 +5,15 @@
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; connect-src 'self' https://efm-pro.onrender.com; font-src 'self' data:; img-src 'self' data: blob: res.cloudinary.com; script-src 'self' 'unsafe-inline' 'unsafe-eval';"
+          "value": "default-src 'self'; connect-src 'self' https://efm-pro.onrender.com http://localhost:5000; font-src 'self' data: https://fonts.gstatic.com https://fonts.googleapis.com *; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://res.cloudinary.com *; script-src 'self' 'unsafe-inline' 'unsafe-eval';"
         }
       ]
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ]
 }

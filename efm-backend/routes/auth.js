@@ -130,6 +130,28 @@ router.get('/profile/:userId', async (req, res) => {
     }
 });
 
+// routes/auth.js
+
+// @desc    Get fresh profile data for the logged-in user
+// @route   GET /api/v1/auth/user/:userId
+router.get('/user/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const user = await User.findById(userId).select('-password -__v');
+        
+        if (!user) {
+            return res.status(404).json({ success: false, error: 'User not found' });
+        }
+
+        res.status(200).json({
+            success: true,
+            data: user
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // @desc    Update user profile 
 router.put('/profile/:userId', async (req, res) => {
     try {
@@ -182,6 +204,29 @@ router.put('/notifications/:userId/read', async (req, res) => {
             $set: { "notifications.$[].isRead": true }
         });
         res.status(200).json({ success: true, message: 'Notifications cleared.' });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+// routes/auth.js
+
+// @desc    Clear all notifications for a specific profile user document
+// @route   POST /api/v1/auth/profile/clear-notifications
+router.post('/profile/clear-notifications', async (req, res) => {
+    try {
+        const { userId } = req.body;
+
+        if (!userId) {
+            return res.status(400).json({ success: false, error: 'Provide a target userId context.' });
+        }
+
+        // Empty out the notification sub-documents array cleanly
+        await User.findByIdAndUpdate(userId, { $set: { notifications: [] } });
+
+        res.status(200).json({ 
+            success: true, 
+            message: 'All application notification arrays cleared successfully.' 
+        });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }

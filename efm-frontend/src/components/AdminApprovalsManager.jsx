@@ -9,18 +9,30 @@ const API_BASE_URL = window.location.hostname === 'localhost'
 const AdminReserveManager = ({ onCounterChange }) => {
     const [reservePlayers, setReservePlayers] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [submitting, setSubmitting] = useState(false);
-    const [selectedPlayerIds, setSelectedPlayerIds] = useState([]);
+    const [submitting, setSubmitting] = useState(false); // For bulk league launcher
+    const [actionLoading, setActionLoading] = useState({}); // For single card actions
+    const [selectedPlayerIds, setSelectedPlayerIds] = useState([]); // Tracks checkboxes for bulk creation
+    const [expandedProvisionId, setExpandedProvisionId] = useState(null); // Tracks single card inline forms
     const [previewImage, setPreviewImage] = useState(null);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
 
-    // League creation form state
-    const [leagueForm, setLeagueForm] = useState({
+    // Bulk League creation form state (Right-hand launcher)
+    const [bulkLeagueForm, setBulkLeagueForm] = useState({
         name: '',
         maxStrengthLimit: 3200,
         capacity: 10,
-        rounds: 0
+        rounds: 0,
+        rules: '' // 🚀 FIXED: Initialize bulk rules tracking state
+    });
+
+    // Isolated dynamic form for single-user inline league creation
+    const [inlineLeagueForm, setInlineLeagueForm] = useState({
+        name: '',
+        maxStrengthLimit: 3200,
+        capacity: 10,
+        rounds: 0,
+        rules: '' // 🚀 FIXED: Initialize inline rules tracking state
     });
 
     useEffect(() => {
@@ -42,6 +54,7 @@ const AdminReserveManager = ({ onCounterChange }) => {
         }
     };
 
+    // --- BULK SELECTION LOGIC ---
     const handlePlayerSelect = (playerId) => {
         setSelectedPlayerIds(prev => 
             prev.includes(playerId) 
@@ -52,56 +65,144 @@ const AdminReserveManager = ({ onCounterChange }) => {
 
     const handleSelectAll = () => {
         if (selectedPlayerIds.length === reservePlayers.length) {
-            setSelectedPlayerIds([]); // Clear selection
+            setSelectedPlayerIds([]);
         } else {
-            setSelectedPlayerIds(reservePlayers.map(p => p._id)); // Select all available
+            setSelectedPlayerIds(reservePlayers.map(p => p._id));
         }
     };
 
-    const handleProvisionLeague = async (e) => {
+    // --- BULK ACTION: CREATE LEAGUE FROM SELECTED ---
+    const handleBulkProvisionLeague = async (e) => {
         e.preventDefault();
         setError('');
         setSuccess('');
 
         if (selectedPlayerIds.length === 0) {
-            setError('Please select at least one reserve player to populate the new league bracket.');
+            setError('Please select at least one manager from the checkboxes to create a bulk league.');
             return;
         }
 
-        if (selectedPlayerIds.length > leagueForm.capacity) {
-            setError(`You selected ${selectedPlayerIds.length} players, but the target league capacity is set to ${leagueForm.capacity}. Raise the capacity or deselect players.`);
+        if (selectedPlayerIds.length > bulkLeagueForm.capacity) {
+            setError(`You selected ${selectedPlayerIds.length} players, but your league capacity is set to ${bulkLeagueForm.capacity}.`);
             return;
         }
 
         setSubmitting(true);
-
         try {
             const payload = {
-                leagueName: leagueForm.name,
-                maxStrengthLimit: leagueForm.maxStrengthLimit,
-                capacity: leagueForm.capacity,
-                rounds: leagueForm.rounds,
-                playerIds: selectedPlayerIds
+                leagueName: bulkLeagueForm.name,
+                maxStrengthLimit: bulkLeagueForm.maxStrengthLimit,
+                capacity: bulkLeagueForm.capacity,
+                rounds: bulkLeagueForm.rounds,
+                playerIds: selectedPlayerIds, 
+                rules: bulkLeagueForm.rules || '' // 🚀 TRANSMITTING: Rules included cleanly
             };
 
             const res = await axios.post(`${API_BASE_URL}/admin/leagues/create-from-reserve`, payload);
 
             if (res.data.success) {
-                setSuccess(res.data.message || 'New league generated and reserve players assigned successfully!');
-                
-                // Remove newly assigned players from the view state pool
+                setSuccess(`Bulk Success: "${bulkLeagueForm.name}" launched with ${selectedPlayerIds.length} managers!`);
                 setReservePlayers(prev => prev.filter(p => !selectedPlayerIds.includes(p._id)));
-                setSelectedPlayerIds([]); // Reset selection checkboxes
-                
-                // Clear out form text field fields
-                setLeagueForm({ name: '', maxStrengthLimit: 3200, capacity: 10, rounds: 0 });
-                
-                if (onCounterChange) onCounterChange(); // Sync navbar notification counts
+                setSelectedPlayerIds([]);
+                setBulkLeagueForm({ name: '', maxStrengthLimit: 3200, capacity: 10, rounds: 0, rules: '' });
+                if (onCounterChange) onCounterChange();
             }
         } catch (err) {
-            setError(err.response?.data?.error || 'Failed to provision tournament from reserve assets.');
+            setError(err.response?.data?.error || 'Failed to bulk-provision tournament.');
         } finally {
             setSubmitting(false);
+        }
+    };
+
+    // --- SINGLE ACTION: APPROVE ---
+    const handleSingleApprove = async (playerId) => {
+        setError('');
+        setSuccess('');
+        setActionLoading(prev => ({ ...prev, [playerId]: 'approving' }));
+
+        try {
+            const res = await axios.post(`${API_BASE_URL}/admin/users/${playerId}/approve`);
+            if (res.data.success) {
+                setSuccess(`Manager profile approved successfully!`);
+                setReservePlayers(prev => prev.filter(p => p._id !== playerId));
+                setSelectedPlayerIds(prev => prev.filter(id => id !== playerId));
+                if (onCounterChange) onCounterChange();
+            }
+        } catch (err) {
+            setError(err.response?.data?.error || 'Failed to approve manager.');
+        } finally {
+            setActionLoading(prev => ({ ...prev, [playerId]: null }));
+        }
+    };
+
+    // --- SINGLE ACTION: REJECT ---
+    const handleSingleReject = async (playerId) => {
+        if (!window.confirm('Are you sure you want to completely reject this applicant?')) return;
+        
+        setError('');
+        setSuccess('');
+        setActionLoading(prev => ({ ...prev, [playerId]: 'rejecting' }));
+
+        try {
+            const res = await axios.post(`${API_BASE_URL}/admin/users/${playerId}/reject`);
+            if (res.data.success) {
+                setSuccess('Manager application rejected and removed.');
+                setReservePlayers(prev => prev.filter(p => p._id !== playerId));
+                setSelectedPlayerIds(prev => prev.filter(id => id !== playerId));
+                if (onCounterChange) onCounterChange();
+            }
+        } catch (err) {
+            setError(err.response?.data?.error || 'Failed to reject candidate.');
+        } finally {
+            setActionLoading(prev => ({ ...prev, [playerId]: null }));
+        }
+    };
+
+    // --- SINGLE ACTION: OPEN INLINE PROVISION FORM ---
+    const toggleInlineForm = (player) => {
+        if (expandedProvisionId === player._id) {
+            setExpandedProvisionId(null);
+        } else {
+            setExpandedProvisionId(player._id);
+            setInlineLeagueForm({
+                name: `${player.username.toUpperCase()}_League`,
+                maxStrengthLimit: player.teamStrength || 3200,
+                capacity: 10,
+                rounds: 0,
+                rules: '' // 🚀 FIXED: Reset inline text boxes on accordion shift
+            });
+        }
+    };
+
+    const handleInlineProvisionSubmit = async (e, playerId) => {
+        e.preventDefault();
+        setError('');
+        setSuccess('');
+        setActionLoading(prev => ({ ...prev, [playerId]: 'provisioning' }));
+
+        try {
+            const payload = {
+                leagueName: inlineLeagueForm.name,
+                maxStrengthLimit: inlineLeagueForm.maxStrengthLimit,
+                capacity: inlineLeagueForm.capacity,
+                rounds: inlineLeagueForm.rounds,
+                playerIds: [playerId],
+                rules: inlineLeagueForm.rules || '' // 🚀 TRANSMITTING: Rules included cleanly
+            };
+
+            const res = await axios.post(`${API_BASE_URL}/admin/leagues/create-from-reserve`, payload);
+
+            if (res.data.success) {
+                setSuccess(`League "${inlineLeagueForm.name}" created for @${reservePlayers.find(p => p._id === playerId)?.username}!`);
+                setReservePlayers(prev => prev.filter(p => p._id !== playerId));
+                setSelectedPlayerIds(prev => prev.filter(id => id !== playerId));
+                setExpandedProvisionId(null);
+                if (onCounterChange) onCounterChange();
+            }
+        } catch (err) {
+            setError(err.response?.data?.error || 'Failed to provision single league.');
+        } finally {
+            setActionLoading(prev => ({ ...prev, [playerId]: null }));
         }
     };
 
@@ -114,84 +215,182 @@ const AdminReserveManager = ({ onCounterChange }) => {
     }
 
     return (
-        <div className="space-y-6">
-            <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-2xl p-5">
-                <h4 className="text-base font-black text-white tracking-tight">Overflow Reserve Pool Hub</h4>
+        <div className="space-y-6 animate-in fade-in duration-200">
+            <div className="bg-[#0f131c] border border-slate-800/80 rounded-2xl p-5">
+                <h4 className="text-base font-black text-white tracking-tight">Manager Application Desk</h4>
                 <p className="text-xs text-slate-400 mt-1">
-                    When active brackets are full, unregistered managers end up here. Select eligible unassigned players below to launch a targeted new tournament bracket.
+                    Process registrations in bulk or individually. Check boxes to create a multi-user league, or manage accounts individually below.
                 </p>
             </div>
 
-            {error && <div className="p-4 rounded-xl text-sm font-medium border bg-rose-500/10 border-rose-500/20 text-rose-400">{error}</div>}
-            {success && <div className="p-4 rounded-xl text-sm font-medium border bg-emerald-500/10 border-emerald-500/20 text-emerald-400">{success}</div>}
+            {error && <div className="p-4 rounded-xl text-sm font-medium border bg-rose-500/10 border-rose-500/20 text-rose-400">⚠️ {error}</div>}
+            {success && <div className="p-4 rounded-xl text-sm font-medium border bg-emerald-500/10 border-emerald-500/20 text-emerald-400">✨ {success}</div>}
 
             {reservePlayers.length === 0 ? (
                 <div className="bg-[#0f131c] border border-slate-800 rounded-2xl p-10 text-center text-slate-500 text-sm">
-                     📭 Reserve pool empty. All signed-up managers are currently slotted inside official leagues.
+                    📭 Queue clear. There are no pending manager profiles waiting for approval.
                 </div>
             ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
                     
-                    {/* --- LEFT COLUMNS: RESERVE MANAGER DIRECTORY LISTING --- */}
+                    {/* --- LEFT COLUMNS: PENDING MANAGERS LIST WITH CHECKBOXES --- */}
                     <div className="lg:col-span-2 space-y-4">
                         <div className="flex items-center justify-between px-2">
-                            <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider">
-                                Unassigned Candidates ({reservePlayers.length})
+                            <h4 className="text-xs font-black text-slate-500 uppercase tracking-wider">
+                                Applications Inbox ({reservePlayers.length})
                             </h4>
                             <button 
                                 onClick={handleSelectAll}
                                 className="text-xs font-bold text-cyan-400 hover:text-cyan-300 transition-colors"
                             >
-                                {selectedPlayerIds.length === reservePlayers.length ? 'Deselect All' : 'Select All Available'}
+                                {selectedPlayerIds.length === reservePlayers.length ? 'Deselect All' : 'Select All for Bulk League'}
                             </button>
                         </div>
 
-                        <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
+                        <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
                             {reservePlayers.map((player) => {
                                 const isChecked = selectedPlayerIds.includes(player._id);
+                                const isBusy = actionLoading[player._id];
+                                const isFormOpen = expandedProvisionId === player._id;
+
                                 return (
                                     <div 
-                                        key={player._id} 
-                                        onClick={() => handlePlayerSelect(player._id)}
-                                        className={`p-4 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-4 ${
-                                            isChecked 
-                                                ? 'bg-cyan-500/5 border-cyan-500/40 shadow-md shadow-cyan-500/5' 
-                                                : 'bg-[#0f131c] border-slate-800/80 hover:border-slate-700'
+                                        key={player._id}
+                                        className={`bg-[#0f131c] border rounded-2xl transition-all overflow-hidden ${
+                                            isFormOpen ? 'border-cyan-500/40' : isChecked ? 'border-cyan-500/20 bg-cyan-500/[0.01]' : 'border-slate-800/80'
                                         }`}
                                     >
-                                        <div className="flex items-center gap-3">
-                                            <input 
-                                                type="checkbox"
-                                                checked={isChecked}
-                                                onChange={() => {}} // Controlled by outer div wrapper click handler
-                                                className="w-4 h-4 rounded text-cyan-500 border-slate-800 focus:ring-0 accent-cyan-400"
-                                            />
-                                            <div className="space-y-1">
-                                                <div className="flex items-center gap-2 flex-wrap">
-                                                    <h5 className="text-sm font-bold text-white">{player.fullname}</h5>
-                                                    
-                                                    {/* 🚀 NEW INJECTED RESERVATION BADGE: Flags priority applicants */}
-                                                    {player.hasBookedUpcoming && (
-                                                        <span className="bg-amber-400/20 text-amber-400 border border-amber-400/30 font-black text-[9px] px-1.5 py-0.5 rounded uppercase tracking-wider animate-pulse">
-                                                            🎟️ Reserved Slot
+                                        {/* Row Information Card */}
+                                        <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                            <div className="flex items-center gap-3.5 min-w-0">
+                                                <input 
+                                                    type="checkbox"
+                                                    checked={isChecked}
+                                                    onChange={() => handlePlayerSelect(player._id)}
+                                                    className="w-4 h-4 rounded text-cyan-500 border-slate-800 focus:ring-0 accent-cyan-400 cursor-pointer shrink-0"
+                                                />
+                                                <div className="space-y-1 min-w-0">
+                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                        <h5 className="text-sm font-extrabold text-white truncate">{player.fullname}</h5>
+                                                        <span className="text-xs font-mono text-slate-400 bg-slate-950 border border-slate-800 px-2 py-0.5 rounded-md">
+                                                            @{player.username}
                                                         </span>
-                                                    )}
+                                                        {player.hasBookedUpcoming && (
+                                                            <span className="bg-amber-400/10 text-amber-400 border border-amber-400/20 font-black text-[9px] px-2 py-0.5 rounded uppercase tracking-wider">
+                                                                🎟️ Priority
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400 font-medium">
+                                                        <span>WhatsApp: <strong className="text-slate-300 font-mono">{player.whatsappNumber}</strong></span>
+                                                        <span className="text-slate-700">•</span>
+                                                        <span>STR: <strong className="text-[#a3e635] font-mono">{player.teamStrength || 'Unrated'}</strong></span>
+                                                    </div>
                                                 </div>
-                                                <p className="text-xs text-slate-400">@{player.username} • <span className="font-mono font-bold text-[#a3e635]">STR: {player.teamStrength}</span></p>
-                                                <p className="text-[10px] text-slate-500 font-medium mt-0.5">WhatsApp: {player.whatsappNumber}</p>
+                                            </div>
+
+                                            {/* Isolated Actions Panel */}
+                                            <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap shrink-0 ml-7 sm:ml-0">
+                                                {player.screenshotUrl && (
+                                                    <button
+                                                        onClick={() => setPreviewImage(player.screenshotUrl)}
+                                                        className="bg-slate-950 hover:bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-400 transition-colors"
+                                                    >
+                                                        🖼️ Inspect
+                                                    </button>
+                                                )}
+
+                                                <button
+                                                    disabled={isBusy}
+                                                    onClick={() => toggleInlineForm(player)}
+                                                    className={`rounded-xl px-3 py-1.5 text-xs font-bold border transition-all ${
+                                                        isFormOpen 
+                                                            ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-400' 
+                                                            : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
+                                                    }`}
+                                                >
+                                                    🏆 {isFormOpen ? 'Close' : 'Deploy League'}
+                                                </button>
+
+                                                <button
+                                                    disabled={isBusy}
+                                                    onClick={() => handleSingleReject(player._id)}
+                                                    className="bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 rounded-xl px-3 py-1.5 text-xs font-black uppercase tracking-wider transition-colors"
+                                                >
+                                                    {isBusy === 'rejecting' ? '...' : 'Reject'}
+                                                </button>
+
+                                                <button
+                                                    disabled={isBusy}
+                                                    onClick={() => handleSingleApprove(player._id)}
+                                                    className="bg-emerald-500 text-slate-950 hover:bg-emerald-400 rounded-xl px-3 py-1.5 text-xs font-black uppercase tracking-wider transition-all"
+                                                >
+                                                    {isBusy === 'approving' ? '...' : 'Approve'}
+                                                </button>
                                             </div>
                                         </div>
 
-                                        {player.screenshotUrl && (
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation(); // Avoid checking box when opening screenshot modal
-                                                    setPreviewImage(player.screenshotUrl);
-                                                }}
-                                                className="bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg p-1.5 text-[11px] font-bold text-slate-300 transition-colors"
-                                            >
-                                                🖼️ View Squad
-                                            </button>
+                                        {/* Inline single league deployment accordion */}
+                                        {isFormOpen && (
+                                            <div className="bg-[#090d14] border-t border-slate-800/60 p-4 sm:p-5 animate-in slide-in-from-top duration-200 space-y-4">
+                                                <div className="text-[11px] text-cyan-400 font-bold uppercase tracking-wider">
+                                                    ⚡ Launch Isolated League for @{player.username}
+                                                </div>
+                                                <form onSubmit={(e) => handleInlineProvisionSubmit(e, player._id)} className="space-y-4">
+                                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+                                                        <div className="space-y-1 sm:col-span-1">
+                                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">League Name</label>
+                                                            <input
+                                                                type="text" required
+                                                                value={inlineLeagueForm.name}
+                                                                onChange={(e) => setInlineLeagueForm({ ...inlineLeagueForm, name: e.target.value })}
+                                                                className="w-full bg-[#0f131c] border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
+                                                            />
+                                                        </div>
+                                                        <div className="grid grid-cols-2 gap-2 sm:col-span-2">
+                                                            <div>
+                                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Max STR</label>
+                                                                <input
+                                                                    type="number" required
+                                                                    value={inlineLeagueForm.maxStrengthLimit}
+                                                                    onChange={(e) => setInlineLeagueForm({ ...inlineLeagueForm, maxStrengthLimit: parseInt(e.target.value) || 0 })}
+                                                                    className="w-full bg-[#0f131c] border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none"
+                                                                />
+                                                            </div>
+                                                            <div>
+                                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Capacity</label>
+                                                                <input
+                                                                    type="number" required
+                                                                    value={inlineLeagueForm.capacity}
+                                                                    onChange={(e) => setInlineLeagueForm({ ...inlineLeagueForm, capacity: parseInt(e.target.value) || 10 })}
+                                                                    className="w-full bg-[#0f131c] border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none"
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* 🚀 FIXED: Added dynamic rules brief textarea box input component */}
+                                                    <div className="space-y-1.5">
+                                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Custom Tournament Briefing / Rules Instructions</label>
+                                                        <textarea
+                                                            rows={2}
+                                                            value={inlineLeagueForm.rules}
+                                                            onChange={(e) => setInlineLeagueForm({ ...inlineLeagueForm, rules: e.target.value })}
+                                                            placeholder="Enter group guidelines, prize info, match reporting deadlines or WhatsApp group invite links..."
+                                                            className="w-full bg-[#0f131c] border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-cyan-500 transition-all resize-none"
+                                                        />
+                                                    </div>
+
+                                                    <div className="flex justify-end">
+                                                        <button
+                                                            type="submit"
+                                                            className="bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-black text-xs uppercase tracking-wider py-2.5 px-6 rounded-xl transition-all shadow-md shadow-cyan-400/5"
+                                                        >
+                                                            Initialize & Launch League
+                                                        </button>
+                                                    </div>
+                                                </form>
+                                            </div>
                                         )}
                                     </div>
                                 );
@@ -199,29 +398,32 @@ const AdminReserveManager = ({ onCounterChange }) => {
                         </div>
                     </div>
 
-                    {/* --- RIGHT COLUMN: LEAGUE LAUNCHPAD PROVISION FORM --- */}
+                    {/* --- RIGHT COLUMN: BULK MATCHMAKING TERMINAL PANELS --- */}
                     <div className="bg-[#0f131c] border border-slate-800 rounded-2xl p-5 space-y-4 sticky top-6">
                         <div className="border-b border-slate-800/60 pb-3">
-                            <h4 className="text-sm font-black text-white tracking-tight">Provisioning Terminal</h4>
-                            <p className="text-[11px] text-slate-500 mt-0.5">Deploy a new round-robin configuration using selected candidates.</p>
+                            <h4 className="text-sm font-black text-white tracking-tight">Bulk Provision Terminal</h4>
+                            <p className="text-[11px] text-slate-500 mt-0.5">Deploy a league for all checked users instantly.</p>
                         </div>
 
                         <div className="bg-slate-950/60 border border-slate-900 rounded-xl p-3 flex items-center justify-between">
-                            <span className="text-xs text-slate-400 font-medium">Selected Managers:</span>
-                            <span className="bg-cyan-400/10 text-cyan-400 border border-cyan-400/20 font-mono font-black text-xs px-2.5 py-1 rounded-lg">
-                                {selectedPlayerIds.length} Slotted
+                            <span className="text-xs text-slate-400 font-medium">Checked Managers:</span>
+                            <span className={`font-mono font-black text-xs px-2.5 py-1 rounded-lg border ${
+                                selectedPlayerIds.length > 0 
+                                    ? 'bg-cyan-400/10 text-cyan-400 border-cyan-400/20' 
+                                    : 'bg-slate-900 text-slate-500 border-slate-800/40'
+                            }`}>
+                                {selectedPlayerIds.length} Checked
                             </span>
                         </div>
 
-                        <form onSubmit={handleProvisionLeague} className="space-y-4">
+                        <form onSubmit={handleBulkProvisionLeague} className="space-y-4">
                             <div className="space-y-1.5">
-                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">New League Name</label>
+                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Bulk League Name</label>
                                 <input
-                                    type="text"
-                                    required
-                                    value={leagueForm.name}
-                                    onChange={(e) => setLeagueForm({ ...leagueForm, name: e.target.value })}
-                                    placeholder="e.g. Meru Elite Bracket B"
+                                    type="text" required
+                                    value={bulkLeagueForm.name}
+                                    onChange={(e) => setBulkLeagueForm({ ...bulkLeagueForm, name: e.target.value })}
+                                    placeholder="e.g. Meru Super Bracket B"
                                     className="w-full bg-[#0b0f17] border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-cyan-500 transition-all"
                                 />
                             </div>
@@ -230,58 +432,67 @@ const AdminReserveManager = ({ onCounterChange }) => {
                                 <div className="space-y-1.5">
                                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Max STR Rating</label>
                                     <input
-                                        type="number"
-                                        required
-                                        value={leagueForm.maxStrengthLimit}
-                                        onChange={(e) => setLeagueForm({ ...leagueForm, maxStrengthLimit: parseInt(e.target.value) || 0 })}
-                                        className="w-full bg-[#0b0f17] border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white font-mono focus:outline-none focus:border-cyan-500 transition-all"
+                                        type="number" required
+                                        value={bulkLeagueForm.maxStrengthLimit}
+                                        onChange={(e) => setBulkLeagueForm({ ...bulkLeagueForm, maxStrengthLimit: parseInt(e.target.value) || 0 })}
+                                        className="w-full bg-[#0b0f17] border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white font-mono focus:outline-none"
                                     />
                                 </div>
                                 <div className="space-y-1.5">
                                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Max Capacity</label>
                                     <input
-                                        type="number"
-                                        required
-                                        value={leagueForm.capacity}
-                                        onChange={(e) => setLeagueForm({ ...leagueForm, capacity: parseInt(e.target.value) || 10 })}
-                                        className="w-full bg-[#0b0f17] border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white font-mono focus:outline-none focus:border-cyan-500 transition-all"
+                                        type="number" required
+                                        value={bulkLeagueForm.capacity}
+                                        onChange={(e) => setBulkLeagueForm({ ...bulkLeagueForm, capacity: parseInt(e.target.value) || 10 })}
+                                        className="w-full bg-[#0b0f17] border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white font-mono focus:outline-none"
                                     />
                                 </div>
                             </div>
 
                             <div className="space-y-1.5">
-                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Custom Rounds (0 = full robin)</label>
+                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Rounds (0 = full robin)</label>
                                 <input
-                                    type="number"
-                                    required
-                                    value={leagueForm.rounds}
-                                    onChange={(e) => setLeagueForm({ ...leagueForm, rounds: parseInt(e.target.value) || 0 })}
-                                    className="w-full bg-[#0b0f17] border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white font-mono focus:outline-none focus:border-cyan-500 transition-all"
+                                    type="number" required
+                                    value={bulkLeagueForm.rounds}
+                                    onChange={(e) => setBulkLeagueForm({ ...bulkLeagueForm, rounds: parseInt(e.target.value) || 0 })}
+                                    className="w-full bg-[#0b0f17] border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white font-mono focus:outline-none"
+                                />
+                            </div>
+
+                            {/* 🚀 FIXED: Added dynamic rules brief textarea input section for Bulk submissions */}
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Bulk Tournament Rules & Guidelines</label>
+                                <textarea
+                                    rows={3}
+                                    value={bulkLeagueForm.rules}
+                                    onChange={(e) => setBulkLeagueForm({ ...bulkLeagueForm, rules: e.target.value })}
+                                    placeholder="Enter global group parameters or specific regulations for this batch tournament..."
+                                    className="w-full bg-[#0b0f17] border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-cyan-500 transition-all resize-none"
                                 />
                             </div>
 
                             <button
                                 type="submit"
                                 disabled={submitting || selectedPlayerIds.length === 0}
-                                className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs uppercase tracking-wider py-3.5 rounded-xl shadow-lg shadow-emerald-500/10 active:scale-[0.99] transition-all disabled:opacity-40 disabled:pointer-events-none"
+                                className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs uppercase tracking-wider py-3.5 rounded-xl shadow-lg shadow-emerald-500/10 transition-all disabled:opacity-30 disabled:pointer-events-none"
                             >
-                                {submitting ? 'Generating Bracket...' : '🚀 Launch Official League'}
+                                {submitting ? 'Generating Group...' : '🚀 Launch Bulk Tournament'}
                             </button>
                         </form>
                     </div>
                 </div>
             )}
 
-            {/* --- LIGHTBOX SCREENSHOT PREVIEW MODAL --- */}
+            {/* --- LIGHTBOX MODAL --- */}
             {previewImage && (
                 <div 
                     className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4"
                     onClick={() => setPreviewImage(null)}
                 >
-                    <div className="relative max-w-4xl w-full bg-[#0f131c] border border-slate-800 rounded-3xl p-2.5 shadow-2xl animate-in zoom-in-95 duration-150" onClick={(e) => e.stopPropagation()}>
+                    <div className="relative max-w-4xl w-full bg-[#0f131c] border border-slate-800 rounded-3xl p-2.5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
                         <button 
                             onClick={() => setPreviewImage(null)}
-                            className="absolute top-4 right-4 z-10 bg-slate-950/80 border border-slate-800 text-white font-bold px-3 py-1.5 rounded-xl text-xs transition-colors hover:bg-slate-900"
+                            className="absolute top-4 right-4 z-10 bg-slate-950/80 border border-slate-800 text-white font-bold px-3 py-1.5 rounded-xl text-xs hover:bg-slate-900"
                         >
                             ✕ Close
                         </button>

@@ -1,8 +1,9 @@
 // src/components/Navbar.jsx
 import React from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
+import NotificationBell from './NotificationBell'; // 🚀 IMPORTED: Notification bell component template layer
 
-function Navbar({ currentUser, handleLogout, setLoginModalOpen, mobileNavOpen, setMobileNavOpen }) {
+function Navbar({ currentUser, handleLogout, setLoginModalOpen, mobileNavOpen, setMobileNavOpen, onNotificationCleared }) {
   const navigate = useNavigate();
   const location = useLocation();
   const currentPath = location.pathname;
@@ -22,23 +23,6 @@ function Navbar({ currentUser, handleLogout, setLoginModalOpen, mobileNavOpen, s
           </span>
         </Link>
 
-        {/* Mobile Nav Menu Toggle */}
-        <button
-          onClick={() => setMobileNavOpen(!mobileNavOpen)}
-          className="md:hidden flex items-center justify-center w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 text-slate-300"
-          aria-label="Toggle navigation"
-        >
-          {mobileNavOpen ? (
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          ) : (
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
-          )}
-        </button>
-
         {/* Desktop Navigation */}
         <nav className="hidden md:flex items-center gap-8 text-xs font-bold uppercase tracking-widest text-slate-400">
           <Link to="/" className={`hover:text-white transition-colors ${currentPath === '/' ? 'text-white' : ''}`}>Home</Link>
@@ -53,6 +37,33 @@ function Navbar({ currentUser, handleLogout, setLoginModalOpen, mobileNavOpen, s
           <Link to="/support" className={`hover:text-white transition-colors ${currentPath === '/support' ? 'text-white' : ''}`}>Support</Link>
         </nav>
 
+        {/* 📱 MOBILE ACTION TRAY: Renders side-by-side with hamburger on small screens */}
+        <div className="flex md:hidden items-center gap-3">
+          {currentUser && (
+            <NotificationBell 
+              currentUser={currentUser} 
+              onNotificationCleared={onNotificationCleared} 
+            />
+          )}
+
+          {/* Mobile Nav Menu Toggle */}
+          <button
+            onClick={() => setMobileNavOpen(!mobileNavOpen)}
+            className="flex items-center justify-center w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 text-slate-300"
+            aria-label="Toggle navigation"
+          >
+            {mobileNavOpen ? (
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            )}
+          </button>
+        </div>
+
         {/* Desktop Profile Status / Action buttons */}
         <div className="hidden md:flex items-center gap-4">
           <button className="hidden sm:inline-flex bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/20 text-xs font-bold tracking-wider uppercase py-2 px-4 rounded-xl transition-all">
@@ -61,6 +72,13 @@ function Navbar({ currentUser, handleLogout, setLoginModalOpen, mobileNavOpen, s
 
           {currentUser ? (
             <div className="flex items-center gap-3">
+              
+              {/* 🚀 DESKTOP BELL: Renders in front of manager profile tags */}
+              <NotificationBell 
+                currentUser={currentUser} 
+                onNotificationCleared={onNotificationCleared} 
+              />
+
               <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 px-3 py-2 rounded-xl text-xs font-bold">
                 <span className="w-2 h-2 rounded-full bg-[#a3e635] animate-pulse"></span>
                 <span className="text-slate-400 font-normal">MANAGER:</span>
@@ -113,13 +131,9 @@ function Navbar({ currentUser, handleLogout, setLoginModalOpen, mobileNavOpen, s
             )}
           </div>
 
-          
           <div className="pt-2 border-t border-slate-900 space-y-3">
-            
-
             {currentUser ? (
               <>
-                {/* 🚀 ADDED: Fixtures & Scores Action Button for Mobile Users */}
                 <button
                   onClick={() => {
                     navigate('/matchday-hub');

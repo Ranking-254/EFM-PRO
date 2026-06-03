@@ -1,6 +1,7 @@
 // src/App.jsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react'; // 🚀 IMPORTED: useEffect for background profile polling
 import { BrowserRouter, Routes, Route, Navigate, Link, useNavigate } from 'react-router-dom';
+import axios from 'axios'; // 🚀 IMPORTED: axios for fetching updates
 
 // Extracted Components
 import Navbar from './components/Navbar';
@@ -22,6 +23,11 @@ import TermsOfServicePage from './pages/TermsOfServicePage';
 import PrivacyPolicyPage from './pages/PrivacyPolicyPage';
 import DashboardPage from './pages/DashboardPage';
 import AdminLoginPage from './pages/AdminLoginPage';
+
+// Dynamic API Endpoint Base Route Selector
+const API_BASE_URL = window.location.hostname === 'localhost' 
+    ? 'http://localhost:5000/api/v1' 
+    : 'https://efm-pro.onrender.com/api/v1';
 
 // 🚀 Core Application Entry Layer
 function App() {
@@ -51,17 +57,48 @@ function AppContent() {
   const [tournamentRefreshToken, setTournamentRefreshToken] = useState(0);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
 
+  // Inside src/App.jsx -> AppContent()
+
+  // 🚀 REVISED: Connects cleanly to the user's specific profile endpoint
+  const fetchFreshUserProfile = async () => {
+    if (!currentUser) return;
+    const currentUserId = currentUser.id || currentUser._id;
+    if (!currentUserId) return;
+
+    try {
+      // Hits the single user document endpoint directly
+      const res = await axios.get(`${API_BASE_URL}/auth/user/${currentUserId}`); 
+      if (res.data.success) {
+        const freshData = res.data.data;
+        
+        // Update both the application state and the local storage cache
+        setCurrentUser(freshData);
+        localStorage.setItem('efmpro_user', JSON.stringify(freshData));
+      }
+    } catch (err) {
+      console.error("Background notification sync error:", err);
+    }
+  };
+
+  // 🚀 NEW: Polling mechanism that checks the server database every 10 seconds
+  useEffect(() => {
+    if (currentUser) {
+      const syncInterval = setInterval(() => {
+        fetchFreshUserProfile();
+      }, 10000);
+
+      return () => clearInterval(syncInterval); // Cleanup interval loop on logout
+    }
+  }, [currentUser ? (currentUser.id || currentUser._id) : null]);
+
   const refreshTournamentList = () => {
     setTournamentRefreshToken(prev => prev + 1);
   };
 
   const handleLogin = (user) => {
-    // Collect profile payload, write to local session cache, and push into state
     localStorage.setItem('efmpro_user', JSON.stringify(user));
     setCurrentUser(user);
     setLoginModalOpen(false);
-
-    // 🚀 REDIRECT: Redirects registered or logging-in managers directly to dashboard!
     navigate('/dashboard');
   };
 
@@ -73,12 +110,14 @@ function AppContent() {
   return (
     <div className="min-h-screen bg-[#090d14] text-slate-100 selection:bg-cyan-400 selection:text-slate-900 font-sans antialiased flex flex-col justify-between">
       
+      {/* 🚀 FIXED: Navbar now accepts fetchFreshUserProfile as a prop to handle instant UI clears */}
       <Navbar 
         currentUser={currentUser} 
         handleLogout={handleLogout} 
         setLoginModalOpen={setLoginModalOpen}
         mobileNavOpen={mobileNavOpen}
         setMobileNavOpen={setMobileNavOpen}
+        onNotificationCleared={fetchFreshUserProfile}
       />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 flex-grow w-full">
@@ -111,11 +150,11 @@ function AppContent() {
                   currentUser={currentUser}
                   onJoinSuccess={(leagueId) => {
                     setSelectedLeagueId(leagueId);
-                    navigate('/matchday-hub'); // 🚀 Auto-route straight into tactical play if a join fills the bracket!
+                    navigate('/matchday-hub');
                   }}
                   onViewLeague={(leagueId) => {
                     setSelectedLeagueId(leagueId);
-                    navigate('/standings'); // 🚀 THE FIX: Fires tracking token AND updates active window route context smoothly!
+                    navigate('/standings');
                   }}
                   refreshKey={tournamentRefreshToken}
                 />
@@ -123,22 +162,18 @@ function AppContent() {
             </div>
           } />
 
-          
-
-{/* Matchday Hub Route */}
-<Route path="/matchday-hub" element={
-  <div className="w-full space-y-8">
-    <div className="flex items-center justify-between">
-      <div className="space-y-1">
-        <h2 className="text-2xl font-extrabold text-white tracking-tight">Matchday Hub</h2>
-        <p className="text-xs text-slate-400">Review fixtures and submit your match results.</p>
-      </div>
-    </div>
-    
-    {/* 🚀 FIXED: Removed the selectedLeagueId restriction wrapper so it renders instantly from the navbar! */}
-    <MatchdayHub leagueId={selectedLeagueId} currentUser={currentUser} />
-  </div>
-} />
+          {/* Matchday Hub Route */}
+          <Route path="/matchday-hub" element={
+            <div className="w-full space-y-8">
+              <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <h2 className="text-2xl font-extrabold text-white tracking-tight">Matchday Hub</h2>
+                  <p className="text-xs text-slate-400">Review fixtures and submit your match results.</p>
+                </div>
+              </div>
+              <MatchdayHub leagueId={selectedLeagueId} currentUser={currentUser} />
+            </div>
+          } />
 
           {/* Standings Table Route */}
           <Route path="/standings" element={
@@ -238,7 +273,7 @@ function AppContent() {
       {/* Global Modals */}
       <LoginModal
         isOpen={loginModalOpen}
-        onClose={() => setLoginModalOpen(false)} // 🚀 FIXED: Swapped matching prop name layout safely
+        onClose={() => setLoginModalOpen(false)} 
         onLogin={handleLogin}
       />
     </div>

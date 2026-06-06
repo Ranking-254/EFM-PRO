@@ -1,19 +1,24 @@
 // server.js
+// 🚀 CRITICAL: Sentry instrumentation MUST be loaded first!
+require("./instrument");
+
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet'); // 🚀 Import helmet
 const dotenv = require('dotenv');
+
+dotenv.config();
+
 const connectDB = require('./config/db');
 const leagueRoutes = require('./routes/league');
 const adminRoutes = require('./routes/admin');
+const Sentry = require("@sentry/node"); // Import Sentry instance for error tracking
 
-dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Connect to MongoDB
-connectDB();
+app.set('trust proxy', 1); // Trust first proxy for correct IP logging and rate limiting behind proxies/load balancers
 
 // 🔒 STRICT PRODUCTION CORS CONFIGURATION TIER
 const allowedOrigins = [
@@ -50,6 +55,20 @@ app.use(
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
+// 🚀 SERVERLESS MONGOOSE POOL MIDDLEWARE 
+// Ensures a pooled or cached connection is available before reaching any API route
+app.use(async (req, res, next) => {
+    try {
+        await connectDB();
+        next();
+    } catch (error) {
+        res.status(500).json({ 
+            success: false, 
+            error: "Database handshake failed. Please try again." 
+        });
+    }
+});
+
 // Mount EFM-PRO Routes
 const authRoutes = require('./routes/auth');
 app.use('/api/v1/auth', authRoutes);
@@ -64,6 +83,10 @@ app.get('/', (req, res) => {
         message: "Welcome to the EFM-PRO Core Backend Engine." 
     });
 });
+
+// 🎯 SENTRY ERROR HANDLER MIDDLEWARE
+// This must be positioned AFTER all controllers/routes, but BEFORE any custom error handling layers
+Sentry.setupExpressErrorHandler(app);
 
 app.listen(PORT, () => {
     console.log(`[EFM-PRO] Server initialized and happily humming on port http://localhost:${PORT}`);

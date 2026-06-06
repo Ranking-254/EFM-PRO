@@ -3,9 +3,11 @@ const express = require('express');
 const router = express.Router();
 const User = require('../models/user');
 const League = require('../models/League'); // Adjust path to your League model
+const { adminLimiter } = require('../config/rateLimeter'); // FIXED: Converted to CommonJS require format
 
 // @desc    Get all unassigned/pending reserve players
 // @route   GET /api/v1/admin/pending-users
+// 💡 NOTE: Left without limiter so your admin dashboard layout reads smoothly without restriction logs
 router.get('/pending-users', async (req, res) => {
     try {
         // Find players who are still marked pending or haven't been assigned to an active league bracket
@@ -20,11 +22,9 @@ router.get('/pending-users', async (req, res) => {
     }
 });
 
-// routes/admin.js
-
 // @desc    Batch Create a League directly using Selected Reserve Players
 // @route   POST /api/v1/admin/leagues/create-from-reserve
-router.post('/leagues/create-from-reserve', async (req, res) => {
+router.post('/leagues/create-from-reserve', adminLimiter, async (req, res) => { // 🚀 PROTECTED
     try {
         // 🚀 FIXED: Added 'rules' to the destructuring assignment block!
         const { leagueName, maxStrengthLimit, capacity, rounds, playerIds, rules } = req.body;
@@ -71,7 +71,7 @@ router.post('/leagues/create-from-reserve', async (req, res) => {
 
 // @desc    Standalone Single-User Approval
 // @route   POST /api/v1/admin/users/:userId/approve
-router.post('/users/:userId/approve', async (req, res) => {
+router.post('/users/:userId/approve', adminLimiter, async (req, res) => { // 🚀 PROTECTED
     try {
         const { userId } = req.params;
 
@@ -105,7 +105,7 @@ router.post('/users/:userId/approve', async (req, res) => {
 
 // @desc    Standalone Single-User Rejection
 // @route   POST /api/v1/admin/users/:userId/reject
-router.post('/users/:userId/reject', async (req, res) => {
+router.post('/users/:userId/reject', adminLimiter, async (req, res) => { // 🚀 PROTECTED
     try {
         const { userId } = req.params;
 

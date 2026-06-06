@@ -75,6 +75,8 @@ function LandingPage({ currentUser, setLoginModalOpen }) {
           </div>
         </div>
       </div>
+
+    
     </div>
   );
 }

@@ -1,5 +1,6 @@
 // src/components/SupportPage.jsx
 import React from 'react';
+import { Link } from 'react-router-dom';
 
 const SupportPage = ({ onNavigate }) => {
     return (
@@ -13,6 +14,20 @@ const SupportPage = ({ onNavigate }) => {
                     Get in touch with our team for account issues, league disputes, or technical support.
                 </p>
             </div>
+
+            <div className="bg-[#0f131c] border border-slate-800 rounded-2xl p-5 space-y-3 hover:border-cyan-500/30 transition-all">
+                    <div className="text-2xl">📋</div>
+                    <h4 className="text-sm font-black text-white">FAQ</h4>
+                    <p className="text-xs text-slate-400">
+                        Browse common questions about leagues, scoring, and matchday submissions.
+                    </p>
+                    <Link
+                         to="/faq" 
+                      className="inline-flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white border border-slate-800 text-xs font-black uppercase tracking-wider py-2.5 px-4 rounded-xl transition-all"
+          >
+                        View FAQs
+               </Link>
+                </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="bg-[#0f131c] border border-slate-800 rounded-2xl p-5 space-y-3 hover:border-cyan-500/30 transition-all">
@@ -61,19 +76,8 @@ const SupportPage = ({ onNavigate }) => {
                     </a>
                 </div>
 
-                <div className="bg-[#0f131c] border border-slate-800 rounded-2xl p-5 space-y-3 hover:border-cyan-500/30 transition-all">
-                    <div className="text-2xl">📋</div>
-                    <h4 className="text-sm font-black text-white">FAQ</h4>
-                    <p className="text-xs text-slate-400">
-                        Browse common questions about leagues, scoring, and matchday submissions.
-                    </p>
-                    <button
-                        onClick={() => onNavigate && onNavigate('faq')}
-                        className="inline-flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white border border-slate-800 text-xs font-black uppercase tracking-wider py-2.5 px-4 rounded-xl transition-all"
-                    >
-                        View FAQs
-                    </button>
-                </div>
+                
+                
             </div>
         </div>
     );

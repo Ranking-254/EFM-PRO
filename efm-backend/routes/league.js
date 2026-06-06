@@ -13,8 +13,9 @@ const generateRoundRobin = require('../utils/scheduler');
 // ========================================================
 router.get('/recruiting', async (req, res) => {
     try {
+        // 🚀 FIXED: Added 'rounds' to query criteria selection
         const leagues = await League.find({ status: 'recruiting' })
-            .select('name maxStrengthLimit capacity players rules createdAt');
+            .select('name maxStrengthLimit capacity players rounds rules createdAt');
         
         const leaguesWithMeta = leagues.map(league => ({
             _id: league._id,
@@ -23,6 +24,7 @@ router.get('/recruiting', async (req, res) => {
             capacity: league.capacity,
             slotsFilled: league.players.length,
             status: league.status,
+            rounds: league.rounds !== undefined ? league.rounds : 0, // 🚀 FIXED: Mapped value securely
             rules: league.rules || '', 
             createdAt: league.createdAt
         }));
@@ -37,10 +39,15 @@ router.get('/recruiting', async (req, res) => {
     }
 });
 
+// ========================================================
+// @desc    Get all active leagues with progression stats
+// @route   GET /api/v1/leagues/active
+// ========================================================
 router.get('/active', async (req, res) => {
     try {
+        // 🚀 FIXED: Added 'rounds' to query criteria selection
         const leagues = await League.find({ status: 'active' })
-            .select('name maxStrengthLimit capacity players currentMatchday rules createdAt');
+            .select('name maxStrengthLimit capacity players currentMatchday rounds rules createdAt');
         
         const leaguesWithMeta = leagues.map(league => ({
             _id: league._id,
@@ -50,6 +57,7 @@ router.get('/active', async (req, res) => {
             slotsFilled: league.players.length,
             status: league.status,
             currentMatchday: league.currentMatchday,
+            rounds: league.rounds !== undefined ? league.rounds : 0, // 🚀 FIXED: Mapped value securely
             rules: league.rules || '', 
             createdAt: league.createdAt
         }));
@@ -64,10 +72,14 @@ router.get('/active', async (req, res) => {
     }
 });
 
+// ========================================================
+// @desc    Get all leagues in system (Master Dashboard Ledger)
+// @route   GET /api/v1/leagues/all
+// ========================================================
 router.get('/all', async (req, res) => {
     try {
         const leagues = await League.find({})
-            .select('name maxStrengthLimit capacity players status currentMatchday rules createdAt');
+            .select('name maxStrengthLimit capacity players status currentMatchday rounds rules createdAt');
         
         const leaguesWithMeta = leagues.map(league => ({
             _id: league._id,
@@ -77,6 +89,7 @@ router.get('/all', async (req, res) => {
             slotsFilled: league.players.length,
             status: league.status,
             currentMatchday: league.currentMatchday || 1,
+            rounds: league.rounds !== undefined ? league.rounds : 0, 
             rules: league.rules || '', 
             createdAt: league.createdAt
         }));
@@ -91,10 +104,15 @@ router.get('/all', async (req, res) => {
     }
 });
 
+// ========================================================
+// @desc    Get leagues a specific user is registered into
+// @route   GET /api/v1/leagues/my-leagues/:userId
+// ========================================================
 router.get('/my-leagues/:userId', async (req, res) => {
     try {
+        // 🚀 FIXED: Added 'rounds' to query criteria selection
         const userLeagues = await League.find({ players: req.params.userId })
-            .select('name maxStrengthLimit capacity players status currentMatchday rules createdAt');
+            .select('name maxStrengthLimit capacity players status currentMatchday rounds rules createdAt');
 
         const leaguesWithMeta = userLeagues.map(league => ({
             _id: league._id,
@@ -104,6 +122,7 @@ router.get('/my-leagues/:userId', async (req, res) => {
             slotsFilled: league.players.length,
             status: league.status,
             currentMatchday: league.currentMatchday || 1,
+            rounds: league.rounds !== undefined ? league.rounds : 0, // 🚀 FIXED: Mapped value securely
             rules: league.rules || '', 
             createdAt: league.createdAt
         }));
@@ -121,9 +140,10 @@ router.get('/my-leagues/:userId', async (req, res) => {
 router.get('/user/:userId', async (req, res) => {
     try {
         const { userId } = req.params;
+        // 🚀 FIXED: Added 'rounds' directly inside user query pipeline selection criteria
         const userLeagues = await League.find({ 
             players: userId 
-        }).select('name status capacity slotsFilled maxStrengthLimit currentMatchday rules');
+        }).select('name status capacity slotsFilled maxStrengthLimit currentMatchday rounds rules');
 
         res.status(200).json({
             success: true,
@@ -150,10 +170,6 @@ router.post('/', async (req, res) => {
     }
 });
 
-// ========================================================
-// @desc    Join an open tournament league
-// @route   POST /api/v1/leagues/:id/join
-// ========================================================
 router.post('/:id/join', async (req, res) => {
     try {
         const league = await League.findById(req.params.id);
@@ -193,7 +209,6 @@ router.post('/:id/join', async (req, res) => {
 
             await Fixture.insertMany(finalizedFixtures);
 
-            // 🚀 TRIGGER 1: Inform all league members that their season fixtures have been generated!
             const leagueLaunchNotification = {
                 message: `📅 Fixtures generated! "${league.name}" is officially full and ACTIVE. Head to the Matchday Hub to run your matches!`,
                 type: "league_assignment",
@@ -219,10 +234,6 @@ router.post('/:id/join', async (req, res) => {
     }
 });
 
-// ========================================================
-// @desc    Get all fixtures for a league (with player details)
-// @route   GET /api/v1/leagues/:id/fixtures
-// ========================================================
 router.get('/:id/fixtures', async (req, res) => {
     try {
         const fixtures = await Fixture.find({ leagueId: req.params.id })
@@ -240,11 +251,6 @@ router.get('/:id/fixtures', async (req, res) => {
     }
 });
 
-
-// ========================================================
-// @desc    Submit a match score (Player action)
-// @route   POST /api/v1/leagues/fixtures/:fixtureId/submit
-// ========================================================
 router.post('/fixtures/:fixtureId/submit', async (req, res) => {
     try {
         const { userId, yourScore, opponentScore } = req.body;
@@ -258,6 +264,23 @@ router.post('/fixtures/:fixtureId/submit', async (req, res) => {
             return res.status(400).json({ success: false, error: "This match result has already been finalized." });
         }
 
+        // 🔒 🚀 CRITICAL PROGRESSION LOCK GUARD BLOCK:
+        // Ensures users cannot advance to higher rounds until previous weeks are completely checked & confirmed.
+        if (fixture.matchday > 1) {
+            const outstandingPriorFixtures = await Fixture.countDocuments({
+                leagueId: fixture.leagueId,
+                matchday: { $lt: fixture.matchday }, 
+                status: { $ne: 'confirmed' }        
+            });
+
+            if (outstandingPriorFixtures > 0) {
+                return res.status(400).json({ 
+                    success: false, 
+                    error: `Progression Blocked: Round ${fixture.matchday} is locked. All tournament groups must complete and confirm outstanding Matchday ${fixture.matchday - 1} results before anyone can advance.` 
+                });
+            }
+        }
+
         const isPlayerA = fixture.playerA.toString() === userId;
         const isPlayerB = fixture.playerB.toString() === userId;
 
@@ -265,7 +288,6 @@ router.post('/fixtures/:fixtureId/submit', async (req, res) => {
             return res.status(403).json({ success: false, error: "You are not a participant in this match." });
         }
 
-        // Identify profiles to determine target notifications receiver
         const submittingUser = await User.findById(userId);
         const opponentId = isPlayerA ? fixture.playerB : fixture.playerA;
 
@@ -286,14 +308,12 @@ router.post('/fixtures/:fixtureId/submit', async (req, res) => {
             if (doesPlayerAAlign && doesPlayerBAlign) {
                 fixture.status = 'confirmed';
                 
-                // 🚀 TRIGGER 2A: Score matches perfectly. Alert the opponent that result has been locked.
                 matchNotification = {
                     message: `✅ Matchday ${fixture.matchday} score confirmed! Your result against @${submittingUser?.username || 'Opponent'} [${yourScore} - ${opponentScore}] has been applied to standings.`,
                     type: "general",
                     createdAt: new Date()
                 };
 
-                // 🚀 TRIGGER 3 (NEW): Push a "Next Matchday Progression" look-ahead alert to BOTH players!
                 const nextMatchdayNumber = fixture.matchday + 1;
                 const progressionAlert = {
                     message: `📅 Matchday ${fixture.matchday} complete! Look ahead to Matchday ${nextMatchdayNumber} in your hub to scout your next opponent.`,
@@ -308,7 +328,6 @@ router.post('/fixtures/:fixtureId/submit', async (req, res) => {
 
             } else {
                 fixture.status = 'disputed';
-                // 🚀 TRIGGER 2B: Conflict in submission. Flash conflict warning to opponent.
                 matchNotification = {
                     message: `⚠️ Score conflict! Your reported score for Matchday ${fixture.matchday} does not match @${submittingUser?.username || 'Opponent'}'s submission. Match flagged for dispute resolution.`,
                     type: "admin_override",
@@ -317,7 +336,6 @@ router.post('/fixtures/:fixtureId/submit', async (req, res) => {
             }
         } else {
             fixture.status = 'awaiting_confirmation';
-            // 🚀 TRIGGER 2C: First submission complete. Prompt opponent to provide confirmation.
             matchNotification = {
                 message: `⚽ Score reported! @${submittingUser?.username || 'Opponent'} submitted a result of [${opponentScore} - ${yourScore}] for Matchday ${fixture.matchday}. Head over to confirm or challenge it!`,
                 type: "score_report",
@@ -327,7 +345,6 @@ router.post('/fixtures/:fixtureId/submit', async (req, res) => {
 
         await fixture.save();
 
-        // Push targeted confirmation/dispute/report notification item to opponent array if generated
         if (matchNotification && opponentId) {
             await User.findByIdAndUpdate(opponentId, { $push: { notifications: matchNotification } });
         }
@@ -345,11 +362,6 @@ router.post('/fixtures/:fixtureId/submit', async (req, res) => {
     }
 });
 
-
-// ========================================================
-// @desc    Get live calculated league standings table
-// @route   GET /api/v1/leagues/:id/standings
-// ========================================================
 router.get('/:id/standings', async (req, res) => {
     try {
         const league = await League.findById(req.params.id).populate('players', 'username');
@@ -432,10 +444,6 @@ router.get('/:id/standings', async (req, res) => {
     }
 });
 
-// ========================================================
-// @desc    Admin override to resolve disputed matches
-// @route   PATCH /api/v1/leagues/fixtures/:fixtureId/resolve
-// ========================================================
 router.patch('/fixtures/:fixtureId/resolve', async (req, res) => {
     try {
         const { playerAScore, playerBScore } = req.body;
@@ -460,7 +468,6 @@ router.patch('/fixtures/:fixtureId/resolve', async (req, res) => {
 
         await fixture.save();
 
-        // 🚀 TRIGGER 3: Dispatch resolution notice to both affected managers
         const targetLeague = await League.findById(fixture.leagueId);
         const disputeResolvedNotification = {
             message: `⚖️ Admin Intervention: The dispute on your Matchday ${fixture.matchday} fixture in "${targetLeague?.name || 'Tournament Group'}" has been settled and locked by organizers.`,
@@ -486,6 +493,10 @@ router.patch('/fixtures/:fixtureId/resolve', async (req, res) => {
     }
 });
 
+// ========================================================
+// @desc    Update league configuration parameters
+// @route   PUT /api/v1/leagues/:id
+// ========================================================
 router.put('/:id', async (req, res) => {
     try {
         const { name, maxStrengthLimit, capacity, status, rounds, rules } = req.body;
@@ -506,21 +517,41 @@ router.put('/:id', async (req, res) => {
         if (status !== undefined && ['recruiting', 'active', 'completed'].includes(status)) {
             league.status = status;
         }
-        if (rounds !== undefined) {
-            if (rounds < 0 || !Number.isInteger(rounds)) {
-                return res.status(400).json({ success: false, error: "Rounds must be a whole number (0 = full round-robin)." });
-            }
-            league.rounds = rounds;
-        }
         if (rules !== undefined) {
             league.rules = rules;
+        }
+
+        // 🚀 CRITICAL RE-ENGINEERED ROUNDS OVERHAUL:
+        if (rounds !== undefined && rounds !== null && rounds !== '') {
+            const parsedRounds = parseInt(rounds, 10);
+
+            if (isNaN(parsedRounds) || parsedRounds < 0) {
+                return res.status(400).json({ success: false, error: "Rounds must be a valid positive whole number." });
+            }
+
+            if (parsedRounds !== league.rounds) {
+                league.rounds = parsedRounds;
+
+                if (league.status === 'active' && league.players.length > 0) {
+                    await Fixture.deleteMany({ leagueId: league._id });
+
+                    const newSchedulePlan = generateRoundRobin(league.players, parsedRounds);
+
+                    const updatedFixtures = newSchedulePlan.map(match => ({
+                        leagueId: league._id,
+                        ...match
+                    }));
+
+                    await Fixture.insertMany(updatedFixtures);
+                }
+            }
         }
 
         await league.save();
 
         res.status(200).json({
             success: true,
-            message: "League updated successfully.",
+            message: "League and matches updated successfully.",
             data: league
         });
     } catch (error) {
@@ -597,7 +628,6 @@ const checkAndCompleteLeague = async (leagueId) => {
         league.status = 'completed';
         await league.save();
 
-        // 🚀 TRIGGER 4: Campaign concluded notice sent to all managers inside the final standings sheet grid
         const endOfSeasonNotification = {
             message: `🏆 Season Concluded! All matchdays inside "${league.name}" are finished. Check the final Standings board to see your official rank positioning!`,
             type: "league_assignment",

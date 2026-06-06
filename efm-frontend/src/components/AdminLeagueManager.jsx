@@ -2,6 +2,10 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
+const API_BASE_URL = window.location.hostname === 'localhost' 
+    ? 'http://localhost:5000/api/v1' 
+    : 'https://efm-pro.onrender.com/api/v1';
+
 const AdminLeagueManager = ({ leagues, onRefresh, onViewLeague }) => {
     const [showCreateForm, setShowCreateForm] = useState(false);
     const [editingLeague, setEditingLeague] = useState(null);
@@ -29,7 +33,7 @@ const AdminLeagueManager = ({ leagues, onRefresh, onViewLeague }) => {
     const fetchMembers = async (leagueId, playerIds) => {
         try {
             const promises = playerIds.map(id =>
-                axios.get(`https://efm-pro.onrender.com/api/v1/auth/profile/${id}`)
+                axios.get(`${API_BASE_URL}/auth/profile/${id}`)
             );
             const results = await Promise.all(promises);
             const members = {};
@@ -81,7 +85,7 @@ const AdminLeagueManager = ({ leagues, onRefresh, onViewLeague }) => {
         try {
             if (editingLeague) {
                 const res = await axios.put(
-                    `https://efm-pro.onrender.com/api/v1/leagues/${editingLeague._id}`,
+                    `${API_BASE_URL}/leagues/${editingLeague._id}`,
                     { 
                         name: formData.name, 
                         maxStrengthLimit: formData.maxStrengthLimit, 
@@ -97,7 +101,7 @@ const AdminLeagueManager = ({ leagues, onRefresh, onViewLeague }) => {
                     onRefresh();
                 }
             } else {
-                const res = await axios.post('https://efm-pro.onrender.com/api/v1/leagues', {
+                const res = await axios.post(`${API_BASE_URL}/leagues`, {
                     name: formData.name,
                     maxStrengthLimit: formData.maxStrengthLimit,
                     capacity: formData.capacity,
@@ -124,7 +128,7 @@ const AdminLeagueManager = ({ leagues, onRefresh, onViewLeague }) => {
 
         setSubmitting(true);
         try {
-            const res = await axios.delete(`https://efm-pro.onrender.com/api/v1/leagues/${leagueId}`);
+            const res = await axios.delete(`${API_BASE_URL}/leagues/${leagueId}`);
             if (res.data.success) {
                 setSuccess(res.data.message);
                 onRefresh();
@@ -141,7 +145,7 @@ const AdminLeagueManager = ({ leagues, onRefresh, onViewLeague }) => {
 
         setSubmitting(true);
         try {
-            const res = await axios.delete(`https://efm-pro.onrender.com/api/v1/leagues/${leagueId}/remove-member/${memberId}`);
+            const res = await axios.delete(`${API_BASE_URL}/leagues/${leagueId}/remove-member/${memberId}`);
             if (res.data.success) {
                 setSuccess(`${memberName} removed successfully.`);
                 onRefresh();

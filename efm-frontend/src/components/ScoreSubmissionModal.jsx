@@ -2,6 +2,11 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
+const API_BASE_URL = window.location.hostname === 'localhost' 
+    ? 'http://localhost:5000/api/v1' 
+    : 'https://efm-pro.onrender.com/api/v1';
+
+
 const ScoreSubmissionModal = ({ isOpen, onClose, fixture, currentUserId, onSubmissionComplete }) => {
     const [yourScore, setYourScore] = useState('');
     const [opponentScore, setOpponentScore] = useState('');
@@ -43,7 +48,7 @@ const ScoreSubmissionModal = ({ isOpen, onClose, fixture, currentUserId, onSubmi
 
         try {
             const res = await axios.post(
-                `https://efm-pro.onrender.com/api/v1/leagues/fixtures/${fixture._id}/submit`,
+                `${API_BASE_URL}/leagues/fixtures/${fixture._id}/submit`,
                 {
                     userId: currentUserId,
                     yourScore: parsedYourScore,

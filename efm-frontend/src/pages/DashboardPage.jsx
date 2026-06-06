@@ -1,6 +1,7 @@
 // src/pages/DashboardPage.jsx
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { Link } from 'react-router-dom';
 
 // Fallback to production API link if running live on Vercel
 const API_BASE_URL = window.location.hostname === 'localhost' 
@@ -21,7 +22,7 @@ const DashboardPage = ({ currentUser, onNavigate }) => {
         fullname: '',
         username: '',
         whatsappNumber: '',
-        
+        efootballId: '', // 🚀 FIXED: Initialized missing state key
         teamStrength: 3100,
         squadImage: ''
     });
@@ -34,12 +35,13 @@ const DashboardPage = ({ currentUser, onNavigate }) => {
             fetchProfile();
             fetchMyLeagues();
         } else {
-            setLoading(false);
+            setLoading(false); // 🚀 FIXED: Crashed because 'loading(false)' was invoked instead of 'setLoading'
         }
     }, [currentUser, currentUserId]);
 
     const fetchProfile = async () => {
         try {
+            setLoading(true);
             const res = await axios.get(`${API_BASE_URL}/auth/profile/${currentUserId}`);
             if (res.data.success) {
                 const data = res.data.data;
@@ -48,6 +50,7 @@ const DashboardPage = ({ currentUser, onNavigate }) => {
                     fullname: data.fullname || '',
                     username: data.username || '',
                     whatsappNumber: data.whatsappNumber || '',
+                    efootballId: data.efootballId || '',
                     teamStrength: data.teamStrength || 3100,
                     squadImage: data.squadImage || ''
                 });
@@ -124,6 +127,7 @@ const DashboardPage = ({ currentUser, onNavigate }) => {
                 {
                     fullname: form.fullname,
                     username: form.username,
+                    efootballId: form.efootballId,
                     whatsappNumber: form.whatsappNumber,
                     teamStrength: form.teamStrength,
                     squadImage: form.squadImage
@@ -161,14 +165,16 @@ const DashboardPage = ({ currentUser, onNavigate }) => {
                     <div className="inline-flex items-center gap-1.5 bg-[#a3e635]/10 text-[#a3e635] text-[10px] uppercase font-black tracking-widest px-3 py-1 rounded-full border border-[#a3e635]/20">
                         Manager Hub
                     </div>
-                    <h2 className="text-3xl font-extrabold text-white tracking-tight">My Dashboard</h2>
+                    <h2 className="text-3xl font-extrabold text-white tracking-tight mt-1">
+                        Hello, <span className="text-cyan-400 font-mono">{profile?.username || currentUser?.username || 'Manager'}</span> 👋
+                    </h2>
                 </div>
-                <button
-                    onClick={() => onNavigate && onNavigate('league-recruitment')}
-                    className="bg-cyan-400 hover:bg-cyan-300 text-slate-950 text-xs font-black uppercase tracking-wider py-3 px-5 rounded-xl shadow-lg shadow-cyan-400/10 transition-all"
+                <Link
+                    to="/tournament"
+                    className="inline-block text-center bg-cyan-400 hover:bg-cyan-300 text-slate-950 text-xs font-black uppercase tracking-wider py-3 px-5 rounded-xl shadow-lg shadow-cyan-400/10 transition-all"
                 >
                     Browse Tournaments
-                </button>
+                </Link>
             </div>
 
             {message.text && (

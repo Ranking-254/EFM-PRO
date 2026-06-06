@@ -211,7 +211,7 @@ const Register = ({ onRegistrationSuccess, onCancel }) => {
                 {/* 🚀 FORM SECTION REALIGNMENT */}
                 <div className="space-y-4 border-t border-slate-800/60 pt-4">
                     <div className="space-y-2">
-                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">1. Input Team Strength Manually</label>
+                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">1. Input Team Strength</label>
                         <input
                             type="number"
                             name="teamStrength"

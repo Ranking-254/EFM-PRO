@@ -319,7 +319,7 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey })
                                                     : 'bg-cyan-400 hover:bg-cyan-300 text-slate-950 shadow-lg shadow-cyan-400/10 active:scale-[0.98]'
                                             }`}
                                         >
-                                            {isJoining ? 'Joining...' : hasJoined ? 'Joined ✓' : !currentUser ? 'Register First' : 'Join Bracket'}
+                                            {isJoining ? 'Joining...' : hasJoined ? 'Joined ✓' : !currentUser ? 'Register or Login first' : 'Join Bracket'}
                                         </button>
                                     ) : (
                                         <div className="flex flex-col sm:flex-row gap-2 w-full">

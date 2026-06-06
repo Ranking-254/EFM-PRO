@@ -132,6 +132,7 @@ function AppContent() {
               <Register onRegistrationSuccess={handleLogin} onCancel={() => window.history.back()} />
             </div>
           } />
+          
 
           {/* Tournament Route */}
           <Route path="/tournament" element={

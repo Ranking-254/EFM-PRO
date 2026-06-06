@@ -5,25 +5,47 @@ const jwt = require('jsonwebtoken');
 const axios = require('axios'); // 🚀 Used instead of the cloudinary SDK package
 const router = express.Router();
 const User = require('../models/user');
+const { loginLimiter } = require('../config/rateLimeter') // FIXED: Converted to CommonJS require format
 
 // @desc    Manager login (by username or eFootball ID)
 // @route   POST /api/v1/auth/login
-router.post('/login', async (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
     const { identifier } = req.body;
+    
     if (!identifier || !identifier.trim()) {
-        return res.status(400).json({ success: false, error: 'Please enter your username.' });
+        return res.status(400).json({ success: false, error: 'Please enter your username or WhatsApp number.' });
     }
+    
     try {
-        const user = await User.findOne({ username: identifier.trim() }).select('-__v');
+        const inputVal = identifier.trim();
+
+        // 🚀 UPGRADED: Searches for a document matching either the username OR the WhatsApp number
+        const user = await User.findOne({
+            $or: [
+                { username: inputVal },
+                { whatsappNumber: inputVal }
+            ]
+        }).select('-__v');
+
         if (!user) {
-            return res.status(401).json({ success: false, error: 'No account found with that username.' });
+            return res.status(401).json({ 
+                success: false, 
+                error: 'No manager account found with the provided username or WhatsApp number. Please check your credentials and try again.' 
+            });
         }
+
         const token = jwt.sign(
             { id: user._id, username: user.username },
             process.env.JWT_SECRET || 'fallback_secret_key',
             { expiresIn: '1d' }
         );
-        res.status(200).json({ success: true, message: 'Login successful.', data: { id: user._id, username: user.username, token } });
+
+        res.status(200).json({ 
+            success: true, 
+            message: 'Login successful.', 
+            data: { id: user._id, username: user.username, token } 
+        });
+        
     } catch (error) {
         res.status(500).json({ success: false, error: 'Server error. Please try again later.' });
     }

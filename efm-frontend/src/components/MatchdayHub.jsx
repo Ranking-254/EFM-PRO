@@ -39,19 +39,21 @@ const MatchdayHub = ({ leagueId: initialLeagueId, currentUser }) => {
         }
     }, [selectedLeagueId, userLeagues]);
 
-    const fetchUserLeagues = async () => {
+    const fetchUserLeagues = async (shouldPreserveActiveSelection = false) => {
         try {
-            setLoading(true);
+            if (!shouldPreserveActiveSelection) setLoading(true);
             const res = await axios.get(`${API_BASE_URL}/leagues/user/${currentUserId}`);
             if (res.data.success) {
                 setUserLeagues(res.data.data);
                 
                 // Smart Fallback Setup:
-                // If the app passed a preferred league ID via props, use it. 
-                // Otherwise, default to the first active league they belong to.
                 if (!selectedLeagueId && res.data.data.length > 0) {
                     setSelectedLeagueId(res.data.data[0]._id);
                     setActiveLeague(res.data.data[0]);
+                } else if (selectedLeagueId) {
+                    // 🚀 FRESH HYDRATION: Re-sync current active object data properties if league array reloaded
+                    const freshObj = res.data.data.find(l => l._id === selectedLeagueId);
+                    if (freshObj) setActiveLeague(freshObj);
                 }
             }
         } catch (err) {
@@ -72,7 +74,12 @@ const MatchdayHub = ({ leagueId: initialLeagueId, currentUser }) => {
                 if (res.data.data.length > 0) {
                     // Pull current scheduled matchday fallback marker
                     const targetMatchday = res.data.data[0].leagueMatchday || res.data.data[0].matchday;
-                    setActiveMatchday(targetMatchday);
+                    
+                    // 🚀 SAFETY GUARD: If active matchday selection exceeds new max limits, drop selector safely back to 1
+                    const uniqueMDs = [...new Set(res.data.data.map(f => f.matchday))];
+                    if (!uniqueMDs.includes(activeMatchday)) {
+                        setActiveMatchday(1);
+                    }
                 }
             }
         } catch (err) {
@@ -110,7 +117,11 @@ const MatchdayHub = ({ leagueId: initialLeagueId, currentUser }) => {
     const handleSubmissionComplete = () => {
         setSelectedFixture(null);
         setIsModalOpen(false);
-        if (selectedLeagueId) fetchFixtures(selectedLeagueId);
+        if (selectedLeagueId) {
+            fetchFixtures(selectedLeagueId);
+            // 🚀 RE-SYNC ALL: Ensure league parameters reload smoothly when actions finalize
+            fetchUserLeagues(true); 
+        }
     };
 
     const getStatusBadge = (status) => {
@@ -146,6 +157,7 @@ const MatchdayHub = ({ leagueId: initialLeagueId, currentUser }) => {
     };
 
     const matchdays = groupByMatchday(fixtures);
+    // 🚀 DYNAMIC GENERATION FIX: We build buttons strictly from the real DB fixtures array records received
     const uniqueMatchdays = Object.keys(matchdays).map(Number).sort((a, b) => a - b);
 
     if (loading) {
@@ -178,9 +190,18 @@ const MatchdayHub = ({ leagueId: initialLeagueId, currentUser }) => {
             {/* --- 🚀 MULTI-LEAGUE COMPASS DASHBOARD TABS --- */}
             {userLeagues.length > 1 && (
                 <div className="space-y-2 bg-[#0f131c]/40 border border-slate-800/60 p-4 rounded-2xl">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">
-                        Active Involvements — Select Campaign Deck
-                    </label>
+                    <div className="flex items-center justify-between">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">
+                            Active Involvements — Select Campaign Deck
+                        </label>
+                        {/* 🚀 REFRESH LIFELINE: Added a button to manually trigger a sync without standard page reloads */}
+                        <button 
+                            onClick={() => { fetchUserLeagues(true); if (selectedLeagueId) fetchFixtures(selectedLeagueId); }}
+                            className="text-[10px] text-cyan-400 hover:underline font-mono font-bold"
+                        >
+                            🔄 Sync Board
+                        </button>
+                    </div>
                     <div className="flex items-center gap-2 flex-wrap">
                         {userLeagues.map((league) => (
                             <button
@@ -210,8 +231,16 @@ const MatchdayHub = ({ leagueId: initialLeagueId, currentUser }) => {
 
             {/* Render a single quick-label if they only belong to 1 tournament */}
             {userLeagues.length === 1 && activeLeague && (
-                <div className="text-xs text-slate-400 font-bold bg-[#0f131c] border border-slate-800/60 w-fit px-3 py-1.5 rounded-lg font-mono uppercase tracking-wider">
-                    Tournament Focus: <span className="text-white font-sans font-black">{activeLeague.name}</span>
+                <div className="flex items-center justify-between bg-[#0f131c] border border-slate-800/60 px-3 py-1.5 rounded-lg max-w-xs">
+                    <div className="text-xs text-slate-400 font-bold font-mono uppercase tracking-wider">
+                        Focus: <span className="text-white font-sans font-black">{activeLeague.name}</span>
+                    </div>
+                    <button 
+                        onClick={() => { fetchUserLeagues(true); if (selectedLeagueId) fetchFixtures(selectedLeagueId); }}
+                        className="text-[10px] text-cyan-400 hover:underline font-mono ml-2"
+                    >
+                        🔄 Refresh
+                    </button>
                 </div>
             )}
 
@@ -245,80 +274,105 @@ const MatchdayHub = ({ leagueId: initialLeagueId, currentUser }) => {
                     {/* --- FIXTURE SCOREBOARD MATRIX --- */}
                     <div className="space-y-3">
                         {matchdays[activeMatchday] && matchdays[activeMatchday].length > 0 ? (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {matchdays[activeMatchday].map((fixture) => {
-                                    const playerA = fixture.playerA?._id ? fixture.playerA : { _id: fixture.playerA, username: 'Unregistered Player' };
-                                    const playerB = fixture.playerB?._id ? fixture.playerB : { _id: fixture.playerB, username: 'Unregistered Player' };
+                            (() => {
+                                // 🚀 CHECK GLOBAL CALENDAR COMPLETION:
+                                // Scan your state fixtures array to check if any prior gameweeks have incomplete records
+                                const isPreviousRoundIncomplete = fixtures.some(
+                                    f => f.matchday < activeMatchday && f.status !== 'confirmed'
+                                );
 
-                                    const isCurrentMatch = currentUserId && (playerA._id === currentUserId || playerB._id === currentUserId);
+                                return (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {matchdays[activeMatchday].map((fixture) => {
+                                            const playerA = fixture.playerA?._id ? fixture.playerA : { _id: fixture.playerA, username: 'Unregistered Player' };
+                                            const playerB = fixture.playerB?._id ? fixture.playerB : { _id: fixture.playerB, username: 'Unregistered Player' };
 
-                                    return (
-                                        <div
-                                            key={fixture._id}
-                                            onClick={() => handleFixtureClick(fixture)}
-                                            className={`bg-[#0f131c]/60 backdrop-blur-sm border rounded-2xl p-5 space-y-4 transition-all relative group ${
-                                                fixture.status === 'confirmed'
-                                                    ? 'border-slate-800/60 opacity-60'
-                                                    : fixture.status === 'disputed'
-                                                    ? 'border-rose-500/30 hover:border-rose-400 cursor-pointer bg-rose-500/[0.01]'
-                                                    : isCurrentMatch
-                                                    ? 'border-cyan-500/30 hover:border-cyan-400 cursor-pointer hover:bg-[#0f131c] shadow-lg shadow-cyan-500/[0.02]'
-                                                    : 'border-slate-800/80'
-                                            }`}
-                                        >
-                                            <div className="flex items-center justify-between gap-2">
-                                                <span className="text-[10px] font-black text-slate-500 tracking-wider font-mono">
-                                                    {activeLeague?.name.toUpperCase()} • ROUND {fixture.matchday}
-                                                </span>
-                                                {getStatusBadge(fixture.status)}
-                                            </div>
+                                            const isCurrentMatch = currentUserId && (playerA._id === currentUserId || playerB._id === currentUserId);
+                                            
+                                            // 🚀 GATING TARGET: Only open modal clicks if the game is yours AND no previous week backlog exists
+                                            const isActionable = isCurrentMatch && !isPreviousRoundIncomplete && fixture.status !== 'confirmed';
 
-                                            <div className="space-y-3">
-                                                <div className="flex items-center justify-between">
-                                                    <div className="flex items-center gap-3 min-w-0">
-                                                        <div className="w-7 h-7 rounded-lg bg-cyan-400/10 flex items-center justify-center text-xs font-black text-cyan-400 border border-cyan-400/10 shrink-0">
-                                                            {playerA.username ? playerA.username.charAt(0).toUpperCase() : '?' }
-                                                        </div>
-                                                        <span className={`text-xs md:text-sm font-bold truncate ${playerA._id === currentUserId ? 'text-cyan-400' : 'text-slate-200'}`}>
-                                                            {playerA.username}
-                                                            {playerA._id === currentUserId && <span className="text-[9px] font-black tracking-wide ml-1 opacity-80">(YOU)</span>}
+                                            return (
+                                                <div
+                                                    key={fixture._id}
+                                                    onClick={() => isActionable && handleFixtureClick(fixture)}
+                                                    className={`bg-[#0f131c]/60 backdrop-blur-sm border rounded-2xl p-5 space-y-4 transition-all relative group ${
+                                                        fixture.status === 'confirmed'
+                                                            ? 'border-slate-800/60 opacity-60'
+                                                            : isPreviousRoundIncomplete
+                                                            ? 'border-slate-900/40 opacity-40 cursor-not-allowed select-none bg-slate-950/[0.2]' // 🔒 Visual Locked State
+                                                            : fixture.status === 'disputed'
+                                                            ? 'border-rose-500/30 hover:border-rose-400 cursor-pointer bg-rose-500/[0.01]'
+                                                            : isCurrentMatch
+                                                            ? 'border-cyan-500/30 hover:border-cyan-400 cursor-pointer hover:bg-[#0f131c] shadow-lg shadow-cyan-500/[0.02]'
+                                                            : 'border-slate-800/80'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <span className="text-[10px] font-black text-slate-500 tracking-wider font-mono">
+                                                            {activeLeague?.name?.toUpperCase()} • ROUND {fixture.matchday}
                                                         </span>
+                                                        {getStatusBadge(fixture.status)}
                                                     </div>
-                                                    {(fixture.status === 'confirmed' || fixture.status === 'disputed' || fixture.playerASubmittedScore !== null) && (
-                                                        <span className="text-sm font-mono font-black text-white ml-2">
-                                                            {fixture.status === 'confirmed' ? fixture.playerAScore : (fixture.playerASubmittedScore !== null ? fixture.playerASubmittedScore : '–')}
-                                                        </span>
+
+                                                    <div className="space-y-3">
+                                                        {/* Player A Info & Score */}
+                                                        <div className="flex items-center justify-between">
+                                                            <div className="flex items-center gap-3 min-w-0">
+                                                                <div className="w-7 h-7 rounded-lg bg-cyan-400/10 flex items-center justify-center text-xs font-black text-cyan-400 border border-cyan-400/10 shrink-0">
+                                                                    {playerA.username ? playerA.username.charAt(0).toUpperCase() : '?'}
+                                                                </div>
+                                                                <span className={`text-xs md:text-sm font-bold truncate ${playerA._id === currentUserId ? 'text-cyan-400' : 'text-slate-200'}`}>
+                                                                    {playerA.username}
+                                                                    {playerA._id === currentUserId && <span className="text-[9px] font-black tracking-wide ml-1 opacity-80">(YOU)</span>}
+                                                                </span>
+                                                            </div>
+                                                            {(fixture.status === 'confirmed' || fixture.status === 'disputed' || fixture.playerASubmittedScore !== null) && (
+                                                                <span className="text-sm font-mono font-black text-white ml-2">
+                                                                    {fixture.status === 'confirmed' ? fixture.playerAScore : (fixture.playerASubmittedScore !== null ? fixture.playerASubmittedScore : '–')}
+                                                                </span>
+                                                            )}
+                                                        </div>
+
+                                                        {/* Player B Info & Score */}
+                                                        <div className="flex items-center justify-between">
+                                                            <div className="flex items-center gap-3 min-w-0">
+                                                                <div className="w-7 h-7 rounded-lg bg-amber-400/10 flex items-center justify-center text-xs font-black text-amber-400 border border-amber-400/10 shrink-0">
+                                                                    {playerB.username ? playerB.username.charAt(0).toUpperCase() : '?'}
+                                                                </div>
+                                                                <span className={`text-xs md:text-sm font-bold truncate ${playerB._id === currentUserId ? 'text-amber-400' : 'text-slate-200'}`}>
+                                                                    {playerB.username}
+                                                                    {playerB._id === currentUserId && <span className="text-[9px] font-black tracking-wide ml-1 opacity-80">(YOU)</span>}
+                                                                </span>
+                                                            </div>
+                                                            {(fixture.status === 'confirmed' || fixture.status === 'disputed' || fixture.playerBSubmittedScore !== null) && (
+                                                                <span className="text-sm font-mono font-black text-white ml-2">
+                                                                    {fixture.status === 'confirmed' ? fixture.playerBScore : (fixture.playerBSubmittedScore !== null ? fixture.playerBSubmittedScore : '–')}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+
+                                                    {/* 🚀 MUTATED INTELLIGENT FOOTER FEEDBACK BAR */}
+                                                    {fixture.status !== 'confirmed' && isCurrentMatch && (
+                                                        <div className="pt-2.5 border-t border-slate-900/60 flex items-center justify-center gap-1.5 text-[10px] font-black uppercase tracking-wider transition-colors">
+                                                            {isPreviousRoundIncomplete ? (
+                                                                <span className="text-slate-500 flex items-center gap-1">
+                                                                    🔒 Round Locked — Waiting on Outstanding MD {fixture.matchday - 1} Results
+                                                                </span>
+                                                            ) : (
+                                                                <span className="text-cyan-400 group-hover:text-cyan-300">
+                                                                    ⚡ Tap to submit scores
+                                                                </span>
+                                                            )}
+                                                        </div>
                                                     )}
                                                 </div>
-
-                                                <div className="flex items-center justify-between">
-                                                    <div className="flex items-center gap-3 min-w-0">
-                                                        <div className="w-7 h-7 rounded-lg bg-amber-400/10 flex items-center justify-center text-xs font-black text-amber-400 border border-amber-400/10 shrink-0">
-                                                            {playerB.username ? playerB.username.charAt(0).toUpperCase() : '?' }
-                                                        </div>
-                                                        <span className={`text-xs md:text-sm font-bold truncate ${playerB._id === currentUserId ? 'text-amber-400' : 'text-slate-200'}`}>
-                                                            {playerB.username}
-                                                            {playerB._id === currentUserId && <span className="text-[9px] font-black tracking-wide ml-1 opacity-80">(YOU)</span>}
-                                                        </span>
-                                                    </div>
-                                                    {(fixture.status === 'confirmed' || fixture.status === 'disputed' || fixture.playerBSubmittedScore !== null) && (
-                                                        <span className="text-sm font-mono font-black text-white ml-2">
-                                                            {fixture.status === 'confirmed' ? fixture.playerBScore : (fixture.playerBSubmittedScore !== null ? fixture.playerBSubmittedScore : '–')}
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </div>
-
-                                            {fixture.status !== 'confirmed' && isCurrentMatch && (
-                                                <div className="pt-2.5 border-t border-slate-900/60 flex items-center justify-center gap-1.5 text-[10px] text-cyan-400 font-black uppercase tracking-wider group-hover:text-cyan-300 transition-colors">
-                                                    ⚡ Tap to submit scores
-                                                    
-                                                </div>
-                                            )}
-                                        </div>
-                                    );
-                                })}
-                            </div>
+                                            );
+                                        })}
+                                    </div>
+                                );
+                            })()
                         ) : (
                             <p className="text-center text-slate-500 text-xs py-8 bg-[#0f131c]/20 rounded-2xl border border-dashed border-slate-800/60">
                                 No matches scheduled for this matchday bracket.

@@ -23,7 +23,7 @@ const AdminReserveManager = ({ onCounterChange }) => {
         maxStrengthLimit: 3200,
         capacity: 10,
         rounds: 0,
-        rules: '' // 🚀 FIXED: Initialize bulk rules tracking state
+        rules: '' 
     });
 
     // Isolated dynamic form for single-user inline league creation
@@ -32,7 +32,7 @@ const AdminReserveManager = ({ onCounterChange }) => {
         maxStrengthLimit: 3200,
         capacity: 10,
         rounds: 0,
-        rules: '' // 🚀 FIXED: Initialize inline rules tracking state
+        rules: '' 
     });
 
     useEffect(() => {
@@ -54,7 +54,6 @@ const AdminReserveManager = ({ onCounterChange }) => {
         }
     };
 
-    // --- BULK SELECTION LOGIC ---
     const handlePlayerSelect = (playerId) => {
         setSelectedPlayerIds(prev => 
             prev.includes(playerId) 
@@ -71,7 +70,6 @@ const AdminReserveManager = ({ onCounterChange }) => {
         }
     };
 
-    // --- BULK ACTION: CREATE LEAGUE FROM SELECTED ---
     const handleBulkProvisionLeague = async (e) => {
         e.preventDefault();
         setError('');
@@ -95,7 +93,7 @@ const AdminReserveManager = ({ onCounterChange }) => {
                 capacity: bulkLeagueForm.capacity,
                 rounds: bulkLeagueForm.rounds,
                 playerIds: selectedPlayerIds, 
-                rules: bulkLeagueForm.rules || '' // 🚀 TRANSMITTING: Rules included cleanly
+                rules: bulkLeagueForm.rules || '' 
             };
 
             const res = await axios.post(`${API_BASE_URL}/admin/leagues/create-from-reserve`, payload);
@@ -114,7 +112,6 @@ const AdminReserveManager = ({ onCounterChange }) => {
         }
     };
 
-    // --- SINGLE ACTION: APPROVE ---
     const handleSingleApprove = async (playerId) => {
         setError('');
         setSuccess('');
@@ -135,7 +132,6 @@ const AdminReserveManager = ({ onCounterChange }) => {
         }
     };
 
-    // --- SINGLE ACTION: REJECT ---
     const handleSingleReject = async (playerId) => {
         if (!window.confirm('Are you sure you want to completely reject this applicant?')) return;
         
@@ -158,7 +154,6 @@ const AdminReserveManager = ({ onCounterChange }) => {
         }
     };
 
-    // --- SINGLE ACTION: OPEN INLINE PROVISION FORM ---
     const toggleInlineForm = (player) => {
         if (expandedProvisionId === player._id) {
             setExpandedProvisionId(null);
@@ -168,8 +163,8 @@ const AdminReserveManager = ({ onCounterChange }) => {
                 name: `${player.username.toUpperCase()}_League`,
                 maxStrengthLimit: player.teamStrength || 3200,
                 capacity: 10,
-                rounds: 0,
-                rules: '' // 🚀 FIXED: Reset inline text boxes on accordion shift
+                rounds: 3, // 🚀 UPDATED: Modified fallback baseline default directly from 0 to 3
+                rules: '' 
             });
         }
     };
@@ -185,9 +180,9 @@ const AdminReserveManager = ({ onCounterChange }) => {
                 leagueName: inlineLeagueForm.name,
                 maxStrengthLimit: inlineLeagueForm.maxStrengthLimit,
                 capacity: inlineLeagueForm.capacity,
-                rounds: inlineLeagueForm.rounds,
+                rounds: inlineLeagueForm.rounds, // 🚀 TRANSMITTING CLEANLY NOW
                 playerIds: [playerId],
-                rules: inlineLeagueForm.rules || '' // 🚀 TRANSMITTING: Rules included cleanly
+                rules: inlineLeagueForm.rules || '' 
             };
 
             const res = await axios.post(`${API_BASE_URL}/admin/leagues/create-from-reserve`, payload);
@@ -233,7 +228,7 @@ const AdminReserveManager = ({ onCounterChange }) => {
             ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
                     
-                    {/* --- LEFT COLUMNS: PENDING MANAGERS LIST WITH CHECKBOXES --- */}
+                    {/* --- LEFT COLUMNS: PENDING MANAGERS LIST --- */}
                     <div className="lg:col-span-2 space-y-4">
                         <div className="flex items-center justify-between px-2">
                             <h4 className="text-xs font-black text-slate-500 uppercase tracking-wider">
@@ -260,7 +255,6 @@ const AdminReserveManager = ({ onCounterChange }) => {
                                             isFormOpen ? 'border-cyan-500/40' : isChecked ? 'border-cyan-500/20 bg-cyan-500/[0.01]' : 'border-slate-800/80'
                                         }`}
                                     >
-                                        {/* Row Information Card */}
                                         <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                                             <div className="flex items-center gap-3.5 min-w-0">
                                                 <input 
@@ -289,7 +283,6 @@ const AdminReserveManager = ({ onCounterChange }) => {
                                                 </div>
                                             </div>
 
-                                            {/* Isolated Actions Panel */}
                                             <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap shrink-0 ml-7 sm:ml-0">
                                                 {player.screenshotUrl && (
                                                     <button
@@ -337,7 +330,8 @@ const AdminReserveManager = ({ onCounterChange }) => {
                                                     ⚡ Launch Isolated League for @{player.username}
                                                 </div>
                                                 <form onSubmit={(e) => handleInlineProvisionSubmit(e, player._id)} className="space-y-4">
-                                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+                                                    {/* 🚀 FIXED: Grid layout altered from grid-cols-3 to grid-cols-4 to neatly make space for the rounds tracker field */}
+                                                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
                                                         <div className="space-y-1 sm:col-span-1">
                                                             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">League Name</label>
                                                             <input
@@ -347,29 +341,36 @@ const AdminReserveManager = ({ onCounterChange }) => {
                                                                 className="w-full bg-[#0f131c] border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
                                                             />
                                                         </div>
-                                                        <div className="grid grid-cols-2 gap-2 sm:col-span-2">
-                                                            <div>
-                                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Max STR</label>
-                                                                <input
-                                                                    type="number" required
-                                                                    value={inlineLeagueForm.maxStrengthLimit}
-                                                                    onChange={(e) => setInlineLeagueForm({ ...inlineLeagueForm, maxStrengthLimit: parseInt(e.target.value) || 0 })}
-                                                                    className="w-full bg-[#0f131c] border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none"
-                                                                />
-                                                            </div>
-                                                            <div>
-                                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Capacity</label>
-                                                                <input
-                                                                    type="number" required
-                                                                    value={inlineLeagueForm.capacity}
-                                                                    onChange={(e) => setInlineLeagueForm({ ...inlineLeagueForm, capacity: parseInt(e.target.value) || 10 })}
-                                                                    className="w-full bg-[#0f131c] border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none"
-                                                                />
-                                                            </div>
+                                                        <div className="space-y-1 sm:col-span-1">
+                                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Max STR</label>
+                                                            <input
+                                                                type="number" required
+                                                                value={inlineLeagueForm.maxStrengthLimit}
+                                                                onChange={(e) => setInlineLeagueForm({ ...inlineLeagueForm, maxStrengthLimit: parseInt(e.target.value) || 0 })}
+                                                                className="w-full bg-[#0f131c] border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none"
+                                                            />
+                                                        </div>
+                                                        <div className="space-y-1 sm:col-span-1">
+                                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Capacity</label>
+                                                            <input
+                                                                type="number" required
+                                                                value={inlineLeagueForm.capacity}
+                                                                onChange={(e) => setInlineLeagueForm({ ...inlineLeagueForm, capacity: parseInt(e.target.value) || 10 })}
+                                                                className="w-full bg-[#0f131c] border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none"
+                                                            />
+                                                        </div>
+                                                        {/* 🚀 FIXED: Added the missing Rounds Input Box element directly inside the single player launch configuration form */}
+                                                        <div className="space-y-1 sm:col-span-1">
+                                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Rounds Count</label>
+                                                            <input
+                                                                type="number" required
+                                                                value={inlineLeagueForm.rounds}
+                                                                onChange={(e) => setInlineLeagueForm({ ...inlineLeagueForm, rounds: parseInt(e.target.value, 10) || 0 })}
+                                                                className="w-full bg-[#0f131c] border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-cyan-500"
+                                                            />
                                                         </div>
                                                     </div>
 
-                                                    {/* 🚀 FIXED: Added dynamic rules brief textarea box input component */}
                                                     <div className="space-y-1.5">
                                                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Custom Tournament Briefing / Rules Instructions</label>
                                                         <textarea
@@ -398,7 +399,7 @@ const AdminReserveManager = ({ onCounterChange }) => {
                         </div>
                     </div>
 
-                    {/* --- RIGHT COLUMN: BULK MATCHMAKING TERMINAL PANELS --- */}
+                    {/* --- RIGHT COLUMN: BULK MATCHMAKING TERMINAL --- */}
                     <div className="bg-[#0f131c] border border-slate-800 rounded-2xl p-5 space-y-4 sticky top-6">
                         <div className="border-b border-slate-800/60 pb-3">
                             <h4 className="text-sm font-black text-white tracking-tight">Bulk Provision Terminal</h4>
@@ -444,7 +445,7 @@ const AdminReserveManager = ({ onCounterChange }) => {
                                         type="number" required
                                         value={bulkLeagueForm.capacity}
                                         onChange={(e) => setBulkLeagueForm({ ...bulkLeagueForm, capacity: parseInt(e.target.value) || 10 })}
-                                        className="w-full bg-[#0b0f17] border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white font-mono focus:outline-none"
+                                        className="w-full bg-[#0b0f17] border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white font-mono focus:opacity-100"
                                     />
                                 </div>
                             </div>
@@ -454,12 +455,11 @@ const AdminReserveManager = ({ onCounterChange }) => {
                                 <input
                                     type="number" required
                                     value={bulkLeagueForm.rounds}
-                                    onChange={(e) => setBulkLeagueForm({ ...bulkLeagueForm, rounds: parseInt(e.target.value) || 0 })}
+                                    onChange={(e) => setBulkLeagueForm({ ...bulkLeagueForm, rounds: parseInt(e.target.value, 10) || 0 })}
                                     className="w-full bg-[#0b0f17] border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white font-mono focus:outline-none"
                                 />
                             </div>
 
-                            {/* 🚀 FIXED: Added dynamic rules brief textarea input section for Bulk submissions */}
                             <div className="space-y-1.5">
                                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Bulk Tournament Rules & Guidelines</label>
                                 <textarea

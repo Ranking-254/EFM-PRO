@@ -6,7 +6,7 @@ import axios from 'axios'; // 🚀 IMPORTED: axios for fetching updates
 // Extracted Components
 import Navbar from './components/Navbar';
 import LandingPage from './pages/LandingPage';
-import WhatsAppButton from './components/WhatsAppButton'; // 🚀 IMPORTED: Floating WhatsApp Button Component
+import WhatsAppButton from './components/WhatsappButton' // 🚀 IMPORTED: Floating WhatsApp Button Component
 
 // Original Components & Pages
 import Register from './components/Register';

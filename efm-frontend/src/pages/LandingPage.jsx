@@ -64,7 +64,7 @@ function LandingPage({ currentUser, setLoginModalOpen }) {
             <div className="bg-[#0f131c] border border-slate-800 rounded-2xl p-5 space-y-3 hover:border-cyan-500/30 transition-all group">
               <div className="w-10 h-10 rounded-xl bg-cyan-400/10 flex items-center justify-center text-lg font-black text-cyan-400 border border-cyan-400/20">3</div>
               <h4 className="text-sm font-black text-white">Submit Results</h4>
-              <p className="text-xs text-slate-400 leading-relaxed">After each matchday, submit your score. To submit scores navigate to your fixtures and scores on the dashboard,and enter the final scoreline.
+              <p className="text-xs text-slate-400 leading-relaxed">After each matchday, submit your score. To submit scores navigate to your fixtures and scores,and enter the final scoreline.
                 If both players agree, the result is confirmed automatically.</p>
             </div>
             <div className="bg-[#0f131c] border border-slate-800 rounded-2xl p-5 space-y-3 hover:border-cyan-500/30 transition-all group">

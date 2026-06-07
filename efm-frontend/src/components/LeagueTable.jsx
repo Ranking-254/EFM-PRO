@@ -1,3 +1,4 @@
+// src/components/LeagueTable.jsx
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import PlayerContactModal from './PlayerContactModal';
@@ -12,6 +13,9 @@ const LeagueTable = ({ leagueId, currentUser }) => {
     const [error, setError] = useState('');
     const [leagueName, setLeagueName] = useState('');
     const [contactModal, setContactModal] = useState({ isOpen: false, player: null, opponent: null, leagueName: '' });
+    
+    // 🚀 NEW: Mobile layout toggle toggle state slider engine
+    const [viewMode, setViewMode] = useState('full'); // 'short' or 'full'
 
     const currentUserId = currentUser?.id || currentUser?._id || null;
 
@@ -38,7 +42,6 @@ const LeagueTable = ({ leagueId, currentUser }) => {
     };
 
     const handleRowClick = async (row) => {
-        // 🛠️ FIX: String wrapper safeguards against Object-ID vs String type mismatches
         const isMatch = currentUserId && row.playerId && String(row.playerId) === String(currentUserId);
         
         if (!isMatch || !leagueId) {
@@ -54,7 +57,6 @@ const LeagueTable = ({ leagueId, currentUser }) => {
             const fixturesRes = await axios.get(`${API_BASE_URL}/leagues/${leagueId}/fixtures`);
             if (!fixturesRes.data.success) return;
 
-            // 🛠️ FIX: Cleaned up and standardized cross-checking identifiers with String comparisons
             const myNextFixture = fixturesRes.data.data.find(f => {
                 const pAId = String(f.playerA?._id || f.playerA || '');
                 const pBId = String(f.playerB?._id || f.playerB || '');
@@ -121,21 +123,45 @@ const LeagueTable = ({ leagueId, currentUser }) => {
         );
     }
 
-    // 🛠️ FIX: Wrapped in String layer for consistent styling matching logic
     const isCurrentUserRow = (row) => currentUserId && row.playerId && String(currentUserId) === String(row.playerId);
 
     return (
-        <div className="w-full max-w-5xl bg-[#0f131c] border border-slate-900 rounded-3xl p-6 sm:p-10 shadow-2xl space-y-8">
+        <div className="w-full max-w-5xl bg-[#0f131c] border border-slate-900 rounded-3xl p-4 sm:p-10 shadow-2xl space-y-6 sm:space-y-8">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-900 pb-6">
                 <div className="space-y-1.5">
                     <div className="inline-flex items-center gap-1.5 bg-[#a3e635]/10 text-[#a3e635] text-[10px] uppercase font-black tracking-widest px-2.5 py-1 rounded-full border border-[#a3e635]/20">
                         <span className="w-1.5 h-1.5 rounded-full bg-[#a3e635] animate-ping"></span>
                         Real-Time Leaderboard
                     </div>
-                    <h2 className="text-3xl font-extrabold text-white tracking-tight">{leagueName || 'Master League Standings'}</h2>
-                    <p className="text-xs sm:text-sm text-slate-400">
-                        LIVE aggregation of all confirmed results. Click your row to contact your next opponent.
+                    <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">{leagueName || 'Master League Standings'}</h2>
+                    {/* 🚀 MUTATED TEXT: Added grow animation styling elements cleanly here */}
+                    <p className="text-xs sm:text-sm text-slate-400 original-instruction-label hover:text-cyan-400 transition-colors transform duration-200 cursor-pointer origin-left">
+                        LIVE aggregation of all confirmed results. <span className="inline-block font-black text-cyan-400 bg-cyan-500/5 px-2 py-0.5 rounded border border-cyan-500/10 animate-pulse hover:scale-[1.02] transition-transform">Click your row to contact your next opponent.</span>
                     </p>
+                </div>
+                
+                {/* 🚀 NEW: Responsive layout switcher panel (Only displays on mobile frames) */}
+                <div className="sm:hidden flex items-center bg-[#070a0f] border border-slate-800 p-1 rounded-xl w-fit self-end">
+                    <button
+                        onClick={() => setViewMode('short')}
+                        className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${
+                            viewMode === 'short'
+                                ? 'bg-cyan-400 text-slate-950 shadow'
+                                : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                    >
+                        Short
+                    </button>
+                    <button
+                        onClick={() => setViewMode('full')}
+                        className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${
+                            viewMode === 'full'
+                                ? 'bg-cyan-400 text-slate-950 shadow'
+                                : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                    >
+                        Full
+                    </button>
                 </div>
             </div>
 
@@ -146,22 +172,24 @@ const LeagueTable = ({ leagueId, currentUser }) => {
             )}
 
             <div className="overflow-x-auto rounded-xl">
-                <table className="w-full text-left border-collapse min-w-[640px]">
+                {/* 🚀 DYNAMIC OVERRIDE: Switches minimum table footprint when collapsed to prevent overflow breaks */}
+                <table className={`w-full text-left border-collapse ${viewMode === 'short' ? 'min-w-0' : 'min-w-[640px]'}`}>
                     <thead>
                         <tr className="border-b border-slate-900 text-[11px] uppercase tracking-widest font-bold text-slate-500">
-                            <th className="py-4 px-3 w-16">Rank</th>
-                            <th className="py-4 px-4">Manager</th>
-                            <th className="py-4 px-3 text-center">P</th>
-                            <th className="py-4 px-3 text-center">W</th>
-                            <th className="py-4 px-3 text-center">D</th>
-                            <th className="py-4 px-3 text-center">L</th>
-                            <th className="py-4 px-3 text-center">GF</th>
-                            <th className="py-4 px-3 text-center">GA</th>
-                            <th className="py-4 px-3 text-center">GD</th>
-                            <th className="py-4 px-3 text-center">PTS</th>
+                            <th className="py-4 px-3 w-14 sm:w-16">Rank</th>
+                            <th className="py-4 px-2 sm:px-4">Manager</th>
+                            <th className="py-4 px-2 sm:px-3 text-center">P</th>
+                            <th className="py-4 px-2 sm:px-3 text-center">W</th>
+                            {/* 🚀 CONDITIONAL HIDE MATRIX BLOCKS */}
+                            {viewMode === 'full' && <th className="py-4 px-3 text-center">D</th>}
+                            {viewMode === 'full' && <th className="py-4 px-3 text-center">L</th>}
+                            {viewMode === 'full' && <th className="py-4 px-3 text-center">GF</th>}
+                            {viewMode === 'full' && <th className="py-4 px-3 text-center">GA</th>}
+                            <th className="py-4 px-2 sm:px-3 text-center">GD</th>
+                            <th className="py-4 px-2 sm:px-3 text-center">PTS</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-900 text-sm font-medium">
+                    <tbody className="divide-y divide-slate-900 text-xs sm:text-sm font-medium">
                         {standings.map((row, index) => {
                             const rank = index + 1;
                             const isTop = rank === 1;
@@ -179,14 +207,14 @@ const LeagueTable = ({ leagueId, currentUser }) => {
                                             : 'hover:bg-slate-900/30'
                                     } transition-colors group`}
                                 >
-                                    <td className={`py-4 px-3 font-mono font-black text-base ${
+                                    <td className={`py-4 px-3 font-mono font-black text-sm sm:text-base ${
                                         isTop ? 'text-[#a3e635]' : rank <= 3 ? 'text-cyan-400' : 'text-slate-400'
                                     }`}>
                                         {rank}
                                     </td>
-                                    <td className="py-4 px-4">
-                                        <div className="flex items-center gap-3">
-                                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black font-mono border ${
+                                    <td className="py-4 px-2 sm:px-4 max-w-[120px] sm:max-w-none">
+                                        <div className="flex items-center gap-2 sm:gap-3">
+                                            <div className={`w-6 h-6 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center text-[10px] sm:text-xs font-black font-mono border shrink-0 ${
                                                 isTop
                                                     ? 'bg-[#a3e635]/20 text-[#a3e635] border-[#a3e635]/30'
                                                     : isMe
@@ -195,26 +223,27 @@ const LeagueTable = ({ leagueId, currentUser }) => {
                                             }`}>
                                                 {row.username ? row.username.charAt(0).toUpperCase() : '?'}
                                             </div>
-                                            <div>
-                                                <span className={`font-bold ${isTop ? 'text-[#a3e635]' : isMe ? 'text-cyan-400' : 'text-white'}`}>
+                                            <div className="truncate min-w-0">
+                                                <span className={`font-bold block truncate ${isTop ? 'text-[#a3e635]' : isMe ? 'text-cyan-400' : 'text-white'}`}>
                                                     {row.username}
                                                 </span>
                                                 {isMe && (
-                                                    <span className="text-[10px] text-cyan-400 ml-2 uppercase tracking-wider font-bold">(You)</span>
+                                                    <span className="text-[8px] sm:text-[10px] text-cyan-400 uppercase tracking-wider font-bold block sm:inline">(You)</span>
                                                 )}
                                             </div>
                                         </div>
                                     </td>
-                                    <td className="py-4 px-3 text-center text-slate-300 font-mono">{row.played}</td>
-                                    <td className="py-4 px-3 text-center text-slate-300 font-mono">{row.won}</td>
-                                    <td className="py-4 px-3 text-center text-slate-300 font-mono">{row.drawn}</td>
-                                    <td className="py-4 px-3 text-center text-slate-300 font-mono">{row.lost}</td>
-                                    <td className="py-4 px-3 text-center text-slate-300 font-mono">{row.goalsFor}</td>
-                                    <td className="py-4 px-3 text-center text-slate-300 font-mono">{row.goalsAgainst}</td>
-                                    <td className={`py-4 px-3 text-center font-mono font-black text-sm ${(row.goalDifference || 0) > 0 ? 'text-[#a3e635]' : (row.goalDifference || 0) < 0 ? 'text-rose-400' : 'text-slate-400'}`}>
+                                    <td className="py-4 px-2 sm:px-3 text-center text-slate-300 font-mono">{row.played}</td>
+                                    <td className="py-4 px-2 sm:px-3 text-center text-slate-300 font-mono">{row.won}</td>
+                                    {/* 🚀 CONDITIONAL CELL HIDE MATRIX BLOCKS */}
+                                    {viewMode === 'full' && <td className="py-4 px-3 text-center text-slate-300 font-mono">{row.drawn}</td>}
+                                    {viewMode === 'full' && <td className="py-4 px-3 text-center text-slate-300 font-mono">{row.lost}</td>}
+                                    {viewMode === 'full' && <td className="py-4 px-3 text-center text-slate-300 font-mono">{row.goalsFor}</td>}
+                                    {viewMode === 'full' && <td className="py-4 px-3 text-center text-slate-300 font-mono">{row.goalsAgainst}</td>}
+                                    <td className={`py-4 px-2 sm:px-3 text-center font-mono font-black text-xs sm:text-sm ${(row.goalDifference || 0) > 0 ? 'text-[#a3e635]' : (row.goalDifference || 0) < 0 ? 'text-rose-400' : 'text-slate-400'}`}>
                                         {(row.goalDifference || 0) > 0 ? `+${row.goalDifference}` : row.goalDifference}
                                     </td>
-                                    <td className={`py-4 px-3 text-center text-2xl font-black font-mono ${isTop ? 'text-[#a3e635]' : isMe ? 'text-cyan-400' : 'text-white'}`}>
+                                    <td className={`py-4 px-2 sm:px-3 text-center text-lg sm:text-2xl font-black font-mono ${isTop ? 'text-[#a3e635]' : isMe ? 'text-cyan-400' : 'text-white'}`}>
                                         {row.points}
                                     </td>
                                 </tr>

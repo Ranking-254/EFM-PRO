@@ -1,3 +1,4 @@
+// src/components/TournamentHub.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 
@@ -43,37 +44,36 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey })
         fetchLeagues();
     }, [fetchLeagues, refreshKey]);
 
-   const handleJoinBracket = async (leagueId) => {
-    if (!currentUser) {
-        setError('You must be registered to join a league.');
-        return;
-    }
-
-    setJoining(leagueId);
-    setError('');
-    setSuccess('');
-
-    try {
-        // 🚀 FIXED: Removed the duplicate /api/v1 string block segment 
-        const res = await axios.post(`${API_BASE_URL}/leagues/${leagueId}/join`, {
-            userId: currentUser.id || currentUser._id
-        });
-
-        if (res.data.success) {
-            setSuccess(res.data.message);
-            fetchLeagues();
-
-            if (res.data.status === 'active' && onJoinSuccess) {
-                setTimeout(() => onJoinSuccess(leagueId), 1500);
-            }
+    const handleJoinBracket = async (leagueId) => {
+        if (!currentUser) {
+            setError('You must be registered to join a league.');
+            return;
         }
-    } catch (err) {
-        const serverErr = err.response?.data?.error || 'Failed to join league.';
-        setError(serverErr);
-    } finally {
-        setJoining(null);
-    }
-};
+
+        setJoining(leagueId);
+        setError('');
+        setSuccess('');
+
+        try {
+            const res = await axios.post(`${API_BASE_URL}/leagues/${leagueId}/join`, {
+                userId: currentUser.id || currentUser._id
+            });
+
+            if (res.data.success) {
+                setSuccess(res.data.message);
+                fetchLeagues();
+
+                if (res.data.status === 'active' && onJoinSuccess) {
+                    setTimeout(() => onJoinSuccess(leagueId), 1500);
+                }
+            }
+        } catch (err) {
+            const serverErr = err.response?.data?.error || 'Failed to join league.';
+            setError(serverErr);
+        } finally {
+            setJoining(null);
+        }
+    };
 
     const handleGlobalReserveSpot = async () => {
         const userId = currentUser?.id || currentUser?._id;
@@ -108,7 +108,8 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey })
 
     // 🚀 INTERCEPT ACTION: Show mandatory scrolling rules before navigating to standings
     const handleViewStandingsClick = (league, hasJoined) => {
-        if (hasJoined) {
+        // 🚀 FIXED: Now checks if the user has joined OR if the target league status is officially full and active!
+        if (hasJoined || league.status === 'active') {
             setRulesModal({ isOpen: true, league, targetAction: 'standings' });
         } else {
             if (onViewLeague) onViewLeague(league._id, 'standings');
@@ -245,7 +246,6 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey })
                                                 {league.name}
                                             </h4>
                                             
-                                            {/* 🚀 Interactive Info Icon Element Header Container */}
                                             <div className="flex items-center gap-2 mt-1">
                                                 <button
                                                     onClick={() => setRulesModal({ isOpen: true, league, targetAction: 'info' })}
@@ -366,7 +366,7 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey })
                         {/* Scrollable Rules Engine Base Body */}
                         <div className="p-6 overflow-y-auto space-y-6 text-sm text-slate-300 custom-scrollbar flex-1">
                             
-                            {/* 🚀 NEW: Admin Defined Custom Tournament Rules Announcement Platform */}
+                            {/* 📢 Custom Tournament Rules */}
                             {rulesModal.league.rules ? (
                                 <div className="bg-cyan-500/5 border border-cyan-500/20 rounded-xl p-4 space-y-2">
                                     <h5 className="text-xs font-bold text-cyan-400 uppercase tracking-widest flex items-center gap-2">
@@ -378,7 +378,7 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey })
                                 </div>
                             ) : null}
 
-                            {/* Schedule & Timing Segment (Baseline Default) */}
+                            {/* Schedule & Timing Segment */}
                             <div className="bg-[#0b0f17] border border-slate-800/60 rounded-xl p-4 space-y-3">
                                 <h5 className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
                                     📅 Season Timeline & Launch
@@ -390,7 +390,7 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey })
                                 </div>
                             </div>
 
-                            {/* Core Requirements Section (Baseline Default) */}
+                            {/* Core Requirements Section */}
                             <div className="space-y-3">
                                 <h5 className="text-xs font-bold text-slate-400 uppercase tracking-widest">
                                     🎮 Gameplay Instructions & Squad Limits
@@ -411,7 +411,7 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey })
                                 </ul>
                             </div>
 
-                            {/* Behavioral & Fairplay Code (Baseline Default) */}
+                            {/* Behavioral & Fairplay Code */}
                             <div className="space-y-3">
                                 <h5 className="text-xs font-bold text-slate-400 uppercase tracking-widest">
                                     🚨 Fairplay & Opponent Coordination
@@ -422,7 +422,7 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey })
                             </div>
                         </div>
 
-                        {/* Sticky Bottom Actions Layout (Forces Scroll Recognition) */}
+                        {/* Sticky Bottom Actions Layout */}
                         <div className="p-4 bg-[#0b0f17] border-t border-slate-800 rounded-b-3xl flex justify-end">
                             <button
                                 onClick={executeRulesAcknowledge}

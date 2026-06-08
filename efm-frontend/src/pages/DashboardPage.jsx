@@ -1,12 +1,28 @@
 // src/pages/DashboardPage.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
+// 🚀 NEW: Import React Image Crop library utilities and styles
+import ReactCrop, { centerCrop, makeAspectCrop } from 'react-image-crop';
+import 'react-image-crop/dist/ReactCrop.css';
 
-// Fallback to production API link if running live on Vercel
 const API_BASE_URL = window.location.hostname === 'localhost' 
     ? 'http://localhost:5000/api/v1' 
     : 'https://efm-pro.onrender.com/api/v1';
+
+// Helper utility to initialize a strict 1:1 aspect ratio square box right in the center of the image canvas
+function centerAspectCrop(mediaWidth, mediaHeight, aspect) {
+    return centerCrop(
+        makeAspectCrop(
+            { unit: '%', width: 90 },
+            aspect,
+            mediaWidth,
+            mediaHeight
+        ),
+        mediaWidth,
+        mediaHeight
+    );
+}
 
 const DashboardPage = ({ currentUser, onNavigate }) => {
     const [profile, setProfile] = useState(null);
@@ -15,16 +31,22 @@ const DashboardPage = ({ currentUser, onNavigate }) => {
     const [saving, setSaving] = useState(false);
     const [uploading, setUploading] = useState(false);
 
-    // Resolve MongoDB _id vs standard id variance safely
+    // 🚀 NEW: Cropper State Management Pool
+    const [cropImageSrc, setCropImageSrc] = useState(''); 
+    const [crop, setCrop] = useState(); 
+    const [completedCrop, setCompletedCrop] = useState(null); 
+    const [showCropModal, setShowCropModal] = useState(false);
+    const imageRef = useRef(null); 
+
     const currentUserId = currentUser?.id || currentUser?._id;
 
     const [form, setForm] = useState({
         fullname: '',
         username: '',
         whatsappNumber: '',
-        efootballId: '', // 🚀 FIXED: Initialized missing state key
+        efootballId: '', 
         teamStrength: 3100,
-        squadImage: ''
+        profileImage: '' 
     });
 
     const [message, setMessage] = useState({ type: '', text: '' });
@@ -35,7 +57,7 @@ const DashboardPage = ({ currentUser, onNavigate }) => {
             fetchProfile();
             fetchMyLeagues();
         } else {
-            setLoading(false); // 🚀 FIXED: Crashed because 'loading(false)' was invoked instead of 'setLoading'
+            setLoading(false); 
         }
     }, [currentUser, currentUserId]);
 
@@ -52,7 +74,7 @@ const DashboardPage = ({ currentUser, onNavigate }) => {
                     whatsappNumber: data.whatsappNumber || '',
                     efootballId: data.efootballId || '',
                     teamStrength: data.teamStrength || 3100,
-                    squadImage: data.squadImage || ''
+                    profileImage: data.profileImage || '' 
                 });
             }
         } catch (err) {
@@ -78,41 +100,83 @@ const DashboardPage = ({ currentUser, onNavigate }) => {
         setMessage({ type: '', text: '' });
     };
 
-    const handleImageUpload = async (file) => {
-        if (!file) return;
+    // 🚀 NEW: Intercepts raw file upload selecting behavior to initialize cropper framework instead
+    const handleSelectFile = (e) => {
+        if (e.target.files && e.target.files.length > 0) {
+            setCrop(undefined); 
+            const reader = new FileReader();
+            reader.addEventListener('load', () => {
+                setCropImageSrc(reader.result?.toString() || '');
+                setShowCropModal(true); 
+            });
+            reader.readAsDataURL(e.target.files[0]);
+        }
+    };
+
+    // Auto-calculates cropping baseline limits as soon as the canvas viewport object finishes mounting onto screen arrays
+    const onImageLoad = (e) => {
+        const { width, height } = e.currentTarget;
+        setCrop(centerAspectCrop(width, height, 1)); 
+    };
+
+    // 🚀 NEW: Processes coordinates map blocks, cuts the target image pixels layout matching bounds, and posts Base64 data payload items up to backend auth router pipelines
+    const handleGenerateCroppedUpload = async () => {
+        if (!imageRef.current || !completedCrop) return;
 
         setUploading(true);
+        setShowCropModal(false); 
         setMessage({ type: '', text: '' });
 
-        try {
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            reader.onload = async () => {
-                const base64data = reader.result;
-                try {
-                    const res = await axios.post(
-                        `${API_BASE_URL}/auth/profile/${currentUserId}/upload-image`,
-                        { image: base64data }
-                    );
-                    if (res.data.success) {
-                        setForm(prev => ({ ...prev, squadImage: res.data.data.squadImage }));
-                        setProfile(prev => ({ ...prev, squadImage: res.data.data.squadImage }));
-                        setMessage({ type: 'success', text: 'Image uploaded successfully!' });
-                    }
-                } catch (err) {
-                    const serverErr = err.response?.data?.error || 'Upload failed.';
-                    setMessage({ type: 'error', text: serverErr });
-                } finally {
-                    setUploading(false);
-                }
-            };
-            reader.onerror = () => {
-                setMessage({ type: 'error', text: 'Failed to read image file.' });
-                setUploading(false);
-            };
-        } catch (err) {
-            setMessage({ type: 'error', text: 'Upload failed.' });
+        const image = imageRef.current;
+        const canvas = document.createElement('canvas');
+        const cropCtx = canvas.getContext('2d');
+
+        if (!cropCtx) {
+            setMessage({ type: 'error', text: 'Canvas processing context initiation failed.' });
             setUploading(false);
+            return;
+        }
+
+        const scaleX = image.naturalWidth / image.width;
+        const scaleY = image.naturalHeight / image.height;
+
+        // Set output dimensions to a clean 250px square layout for fast CDN processing loads performance optimizations
+        canvas.width = 250;
+        canvas.height = 250;
+
+        cropCtx.imageSmoothingEnabled = true;
+        cropCtx.imageSmoothingQuality = 'high';
+
+        cropCtx.drawImage(
+            image,
+            completedCrop.x * scaleX,
+            completedCrop.y * scaleY,
+            completedCrop.width * scaleX,
+            completedCrop.height * scaleY,
+            0,
+            0,
+            250,
+            250
+        );
+
+        const croppedBase64Payload = canvas.toDataURL('image/jpeg', 0.9);
+
+        try {
+            const res = await axios.post(
+                `${API_BASE_URL}/auth/profile/${currentUserId}/upload-avatar`,
+                { image: croppedBase64Payload }
+            );
+            if (res.data.success) {
+                setForm(prev => ({ ...prev, profileImage: res.data.data.profileImage }));
+                setProfile(prev => ({ ...prev, profileImage: res.data.data.profileImage }));
+                setMessage({ type: 'success', text: 'Cropped manager avatar active!' });
+            }
+        } catch (err) {
+            const serverErr = err.response?.data?.error || 'Upload failed.';
+            setMessage({ type: 'error', text: serverErr });
+        } finally {
+            setUploading(false);
+            setCropImageSrc('');
         }
     };
 
@@ -130,7 +194,7 @@ const DashboardPage = ({ currentUser, onNavigate }) => {
                     efootballId: form.efootballId,
                     whatsappNumber: form.whatsappNumber,
                     teamStrength: form.teamStrength,
-                    squadImage: form.squadImage
+                    profileImage: form.profileImage 
                 }
             );
 
@@ -169,16 +233,13 @@ const DashboardPage = ({ currentUser, onNavigate }) => {
                         Hello, <span className="text-cyan-400 font-mono">{profile?.username || currentUser?.username || 'Manager'}</span> 👋
                     </h2>
                 </div>
-                <Link
-                    to="/tournament"
-                    className="inline-block text-center bg-cyan-400 hover:bg-cyan-300 text-slate-950 text-xs font-black uppercase tracking-wider py-3 px-5 rounded-xl shadow-lg shadow-cyan-400/10 transition-all"
-                >
+                <Link to="/tournament" className="inline-block text-center bg-cyan-400 hover:bg-cyan-300 text-slate-950 text-xs font-black uppercase tracking-wider py-3 px-5 rounded-xl shadow-lg transition-all">
                     Browse Tournaments
                 </Link>
             </div>
 
             {message.text && (
-                <div className={`p-4 rounded-xl text-sm font-medium border transition-all duration-300 ${message.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'}`}>
+                <div className={`p-4 rounded-xl text-sm font-medium border ${message.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'}`}>
                     {message.text}
                 </div>
             )}
@@ -186,13 +247,15 @@ const DashboardPage = ({ currentUser, onNavigate }) => {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-1 space-y-6">
                     <div className="bg-[#0f131c] border border-slate-800 rounded-2xl p-5 space-y-4 text-center">
-                        <div className="w-24 h-24 mx-auto rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden flex items-center justify-center">
-                            {form.squadImage ? (
-                                <img src={form.squadImage} alt="Squad" className="w-full h-full object-cover" />
-                            ) : (
-                                <span className="text-3xl">😎</span>
-                            )}
-                        </div>
+                       <div className="w-24 h-24 mx-auto rounded-full bg-slate-900 border border-slate-800 overflow-hidden flex items-center justify-center relative group">
+    {/* ⚡ THE CLEAN FIX: No ternary conditions needed, falls back automatically inside the src attribute */}
+    <img 
+        src={form.profileImage || currentUser.profileImage || '/avatar.png'} 
+        alt="Profile Avatar"
+        className="w-full h-full object-cover" // Changed to w-full/h-full so it fills the parent circle perfectly
+    />
+</div>
+                        
                         {!editing ? (
                             <div>
                                 <h4 className="text-base font-black text-white">{profile?.username || currentUser?.username}</h4>
@@ -201,15 +264,15 @@ const DashboardPage = ({ currentUser, onNavigate }) => {
                         ) : (
                             <div className="space-y-3 text-left">
                                 <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Upload Squad Image</label>
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Change Profile Picture</label>
                                     <input
                                         type="file"
                                         accept="image/*"
-                                        onChange={(e) => handleImageUpload(e.target.files[0])}
+                                        onChange={handleSelectFile} // 🚀 ROUTED: Triggers cropper interface initialization
                                         disabled={uploading}
                                         className="w-full mt-1 text-xs text-slate-400 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-slate-800 file:text-white hover:file:bg-slate-700"
                                     />
-                                    {uploading && <p className="text-[10px] text-cyan-400 mt-1 animate-pulse">Uploading...</p>}
+                                    {uploading && <p className="text-[10px] text-cyan-400 mt-1 animate-pulse">Uploading profile picture...</p>}
                                 </div>
                             </div>
                         )}
@@ -223,10 +286,7 @@ const DashboardPage = ({ currentUser, onNavigate }) => {
                                 <span className="text-white font-black font-mono">{profile?.teamStrength || '—'}</span>
                             </div>
                             <div className="w-full bg-slate-900 rounded-lg h-2">
-                                <div
-                                    className="h-full rounded-lg bg-cyan-400 transition-all duration-500"
-                                    style={{ width: `${Math.min(((profile?.teamStrength || 0) / 4000) * 100, 100)}%` }}
-                                />
+                                <div className="h-full rounded-lg bg-cyan-400 transition-all duration-500" style={{ width: `${Math.min(((profile?.teamStrength || 0) / 4000) * 100, 100)}%` }} />
                             </div>
                         </div>
                         <div className="flex justify-between text-xs pt-1">
@@ -240,10 +300,7 @@ const DashboardPage = ({ currentUser, onNavigate }) => {
                     <div className="bg-[#0f131c] border border-slate-800 rounded-2xl p-6 space-y-5">
                         <div className="flex items-center justify-between">
                             <h4 className="text-base font-black text-white">Profile Details</h4>
-                            <button
-                                onClick={() => setEditing(!editing)}
-                                className="bg-slate-900 hover:bg-slate-800 text-white border border-slate-800 text-[11px] font-black uppercase tracking-wider py-2 px-3 rounded-lg transition-all"
-                            >
+                            <button onClick={() => setEditing(!editing)} className="bg-slate-900 hover:bg-slate-800 text-white border border-slate-800 text-[11px] font-black uppercase tracking-wider py-2 px-3 rounded-lg">
                                 {editing ? 'Cancel' : 'Edit'}
                             </button>
                         </div>
@@ -275,72 +332,35 @@ const DashboardPage = ({ currentUser, onNavigate }) => {
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div className="space-y-2">
                                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Full Name</label>
-                                        <input
-                                            type="text"
-                                            name="fullname"
-                                            value={form.fullname}
-                                            onChange={handleChange}
-                                            className="w-full bg-[#0b0f17] border border-slate-800 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all"
-                                        />
+                                        <input type="text" name="fullname" value={form.fullname} onChange={handleChange} className="w-full bg-[#0b0f17] border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none" />
                                     </div>
                                     <div className="space-y-2">
                                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Username</label>
-                                        <input
-                                            type="text"
-                                            name="username"
-                                            value={form.username}
-                                            onChange={handleChange}
-                                            className="w-full bg-[#0b0f17] border border-slate-800 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all"
-                                        />
+                                        <input type="text" name="username" value={form.username} onChange={handleChange} className="w-full bg-[#0b0f17] border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none" />
                                     </div>
                                     <div className="space-y-2">
                                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">eFootball ID</label>
-                                        <input
-                                            type="text"
-                                            name="efootballId"
-                                            placeholder="Enter eFootball Owner ID"
-                                            value={form.efootballId}
-                                            onChange={handleChange}
-                                            className="w-full bg-[#0b0f17] border border-slate-800 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all"
-                                        />
+                                        <input type="text" name="efootballId" value={form.efootballId} onChange={handleChange} className="w-full bg-[#0b0f17] border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none" />
                                     </div>
                                     <div className="space-y-2">
                                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">WhatsApp Number</label>
-                                        <input
-                                            type="text"
-                                            name="whatsappNumber"
-                                            value={form.whatsappNumber}
-                                            onChange={handleChange}
-                                            className="w-full bg-[#0b0f17] border border-slate-800 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all"
-                                        />
+                                        <input type="text" name="whatsappNumber" value={form.whatsappNumber} onChange={handleChange} className="w-full bg-[#0b0f17] border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none" />
                                     </div>
                                 </div>
 
                                 <div className="space-y-2">
                                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Team Strength: <span className="text-cyan-400 font-black">{form.teamStrength}</span></label>
-                                    <input
-                                        type="range"
-                                        name="teamStrength"
-                                        min="2500"
-                                        max="4000"
-                                        step="5"
-                                        value={form.teamStrength}
-                                        onChange={handleChange}
-                                        className="w-full h-1.5 bg-[#0b0f17] rounded-lg appearance-none cursor-pointer accent-cyan-400"
-                                    />
+                                    <input type="range" name="teamStrength" min="2500" max="4000" step="5" value={form.teamStrength} onChange={handleChange} className="w-full h-1.5 bg-[#0b0f17] rounded-lg appearance-none accent-cyan-400" />
                                 </div>
 
-                                <button
-                                    type="submit"
-                                    disabled={saving}
-                                    className="w-full bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-black text-xs uppercase tracking-wider py-3.5 rounded-xl shadow-lg shadow-cyan-400/10 transition-all disabled:opacity-50 disabled:pointer-events-none"
-                                >
+                                <button type="submit" disabled={saving} className="w-full bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-black text-xs uppercase tracking-wider py-3.5 rounded-xl transition-all disabled:opacity-50">
                                     {saving ? 'Saving...' : 'Save Changes'}
                                 </button>
                             </form>
                         )}
                     </div>
 
+                    {/* 🚀 KEEPING UNTOUCHED: "My Leagues" panel as seen in image_8ae1c2.png */}
                     <div className="bg-[#0f131c] border border-slate-800 rounded-2xl p-6 space-y-4">
                         <h4 className="text-base font-black text-white">My Leagues ({leagues.length})</h4>
                         {leagues.length === 0 ? (
@@ -367,6 +387,62 @@ const DashboardPage = ({ currentUser, onNavigate }) => {
                     </div>
                 </div>
             </div>
+
+            {/* 🚀 NEW: DYNAMIC CROPPING MODAL */}
+            {showCropModal && (
+                <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
+                    <div className="bg-[#121824] border border-slate-800 rounded-3xl w-full max-w-lg p-6 space-y-6 shadow-2xl">
+                        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                            <div>
+                                <h3 className="text-sm font-black text-white uppercase tracking-tight">Frame Profile Picture</h3>
+                                <p className="text-[11px] text-slate-400 mt-0.5">Scale the selector box into a perfect square.</p>
+                            </div>
+                            <button 
+                                onClick={() => { setShowCropModal(false); setCropImageSrc(''); }}
+                                className="text-slate-400 hover:text-white text-xs font-bold transition-colors"
+                            >
+                                ✕ Close
+                            </button>
+                        </div>
+
+                        <div className="bg-slate-950/40 border border-slate-900 rounded-2xl flex items-center justify-center overflow-hidden max-h-[50vh] p-2">
+                            <ReactCrop
+                                crop={crop}
+                                onChange={(c) => setCrop(c)}
+                                onComplete={(c) => setCompletedCrop(c)}
+                                aspect={1} 
+                                circularCrop 
+                                className="max-w-full h-auto"
+                            >
+                                <img
+                                    ref={imageRef}
+                                    src={cropImageSrc}
+                                    alt="Crop Workspace"
+                                    onLoad={onImageLoad}
+                                    className="max-w-full max-h-[45vh] object-contain"
+                                />
+                            </ReactCrop>
+                        </div>
+
+                        <div className="flex items-center gap-3 justify-end">
+                            <button
+                                type="button"
+                                onClick={() => { setShowCropModal(false); setCropImageSrc(''); }}
+                                className="bg-slate-900 hover:bg-slate-800 text-slate-300 font-bold text-xs uppercase tracking-wider py-2.5 px-4 rounded-xl transition-all border border-slate-800"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleGenerateCroppedUpload}
+                                className="bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-black text-xs uppercase tracking-wider py-2.5 px-6 rounded-xl transition-all shadow-md"
+                            >
+                                Confirm & Save Avatar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

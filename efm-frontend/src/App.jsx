@@ -1,12 +1,13 @@
 // src/App.jsx
-import React, { useState, useEffect } from 'react'; // 🚀 IMPORTED: useEffect for background profile polling
+import React, { useState, useEffect } from 'react'; 
 import { BrowserRouter, Routes, Route, Navigate, Link, useNavigate } from 'react-router-dom';
-import axios from 'axios'; // 🚀 IMPORTED: axios for fetching updates
+import axios from 'axios'; 
+import { io } from 'socket.io-client'; // 🚀 UPGRADED: Added real-time client socket import
 
 // Extracted Components
 import Navbar from './components/Navbar';
 import LandingPage from './pages/LandingPage';
-import WhatsAppButton from './components/WhatsappButton' // 🚀 IMPORTED: Floating WhatsApp Button Component
+import WhatsAppButton from './components/WhatsappButton'; 
 
 // Original Components & Pages
 import Register from './components/Register';
@@ -17,7 +18,7 @@ import LeagueTable from './components/LeagueTable';
 import LeagueSelector from './components/LeagueSelector';
 import LoginModal from './components/LoginModal';
 import SupportPage from './components/SupportPage';
-import FAQPage from './components/FAQPage';
+import FAQPage from './components/FAQPage'; 
 import NotFoundPage from './components/NotFoundPage';
 import TournamentRulesPage from './pages/TournamentRulesPage';
 import TermsOfServicePage from './pages/TermsOfServicePage';
@@ -30,6 +31,11 @@ const API_BASE_URL = window.location.hostname === 'localhost'
     ? 'http://localhost:5000/api/v1' 
     : 'https://efm-pro.onrender.com/api/v1';
 
+// 🚀 Socket.io Server Connection Base Route Endpoint Selector
+const SOCKET_BASE_URL = window.location.hostname === 'localhost' 
+    ? 'http://localhost:5000' 
+    : 'https://efm-pro.onrender.com';
+
 // 🚀 Core Application Entry Layer
 function App() {
   return (
@@ -41,7 +47,7 @@ function App() {
 
 // 🚀 Core Content Wrapper Layer (Enables clean programmatic useNavigate executions)
 function AppContent() {
-  const navigate = useNavigate(); // 🚀 Hook activation for immediate dashboard redirection
+  const navigate = useNavigate(); 
 
   const [currentUser, setCurrentUser] = useState(() => {
     try {
@@ -58,8 +64,6 @@ function AppContent() {
   const [tournamentRefreshToken, setTournamentRefreshToken] = useState(0);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
 
-  // Inside src/App.jsx -> AppContent()
-
   // 🚀 REVISED: Connects cleanly to the user's specific profile endpoint
   const fetchFreshUserProfile = async () => {
     if (!currentUser) return;
@@ -67,12 +71,10 @@ function AppContent() {
     if (!currentUserId) return;
 
     try {
-      // Hits the single user document endpoint directly
       const res = await axios.get(`${API_BASE_URL}/auth/user/${currentUserId}`); 
       if (res.data.success) {
         const freshData = res.data.data;
         
-        // Update both the application state and the local storage cache
         setCurrentUser(freshData);
         localStorage.setItem('efmpro_user', JSON.stringify(freshData));
       }
@@ -81,15 +83,74 @@ function AppContent() {
     }
   };
 
-  // 🚀 NEW: Polling mechanism that checks the server database every 10 seconds
   useEffect(() => {
-    if (currentUser) {
-      const syncInterval = setInterval(() => {
-        fetchFreshUserProfile();
-      }, 10000);
+    if (!currentUser) return;
 
-      return () => clearInterval(syncInterval); // Cleanup interval loop on logout
-    }
+    const currentUserId = currentUser.id || currentUser._id;
+    if (!currentUserId) return;
+
+    // 🚀 FIXED: Enforce 'websocket' transport configuration directly to completely skip polling
+    const socket = io(SOCKET_BASE_URL, { 
+        withCredentials: true,
+        transports: ['websocket'], // ⚡ Bypasses HTTP polling strings completely!
+        upgrade: false             // Prevents unnecessary fallback polling handshakes
+    });
+
+    socket.emit('register_manager', currentUserId);
+
+
+// 🚀 FIX 1: Smart update for read states without wiping unmatched history cards
+socket.on('notifications_updated', (backendNotificationsArray) => {
+    setCurrentUser(prevUser => {
+        if (!prevUser) return null;
+        
+        const localNotifications = prevUser.notifications || [];
+        
+        // Merge records: If an alert exists in the backend payload, update its status. 
+        // If it only exists locally (like your score reports or history alerts), preserve it untouched!
+        const mergedNotifications = localNotifications.map(localNotif => {
+            const serverMatch = backendNotificationsArray.find(s => s._id === localNotif._id || s.message === localNotif.message);
+            if (serverMatch) {
+                return { ...localNotif, ...serverMatch }; // Sync properties (like isRead)
+            }
+            return localNotif; // Keep historical items completely safe
+        });
+
+        // Add any brand new server notifications that aren't in our local array yet
+        backendNotificationsArray.forEach(serverNotif => {
+            const alreadyExists = mergedNotifications.some(m => m._id === serverNotif._id || m.message === serverNotif.message);
+            if (!alreadyExists) {
+                mergedNotifications.unshift(serverNotif);
+            }
+        });
+
+        const updatedUserObj = { ...prevUser, notifications: mergedNotifications };
+        localStorage.setItem('efmpro_user', JSON.stringify(updatedUserObj));
+        return updatedUserObj;
+    });
+});
+
+// 🚀 FIX 2: Smart update for new global league broadcasts
+socket.on('global_notification', (newNotif) => {
+    setCurrentUser(prevUser => {
+        if (!prevUser) return null;
+        
+        const currentAlerts = prevUser.notifications || [];
+        
+        // Prevent duplicate cards if the user refreshes
+        const alertExists = currentAlerts.some(n => n.message === newNotif.message);
+        if (alertExists) return prevUser;
+
+        const updatedNotifications = [newNotif, ...currentAlerts];
+        const updatedUserObj = { ...prevUser, notifications: updatedNotifications };
+        
+        localStorage.setItem('efmpro_user', JSON.stringify(updatedUserObj));
+        return updatedUserObj;
+    });
+});
+    return () => {
+        socket.disconnect();
+    };
   }, [currentUser ? (currentUser.id || currentUser._id) : null]);
 
   const refreshTournamentList = () => {
@@ -111,7 +172,6 @@ function AppContent() {
   return (
     <div className="min-h-screen bg-[#090d14] text-slate-100 selection:bg-cyan-400 selection:text-slate-900 font-sans antialiased flex flex-col justify-between">
       
-      {/* 🚀 FIXED: Navbar now accepts fetchFreshUserProfile as a prop to handle instant UI clears */}
       <Navbar 
         currentUser={currentUser} 
         handleLogout={handleLogout} 
@@ -279,7 +339,6 @@ function AppContent() {
         onLogin={handleLogin}
       />
 
-      {/* 🚀 ADDED: Floating Admin WhatsApp Trigger Button */}
       <WhatsAppButton />
     </div>
   );

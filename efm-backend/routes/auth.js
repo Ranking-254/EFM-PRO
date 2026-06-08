@@ -144,7 +144,7 @@ router.post('/register', async (req, res) => {
 // @desc    Get user profile
 router.get('/profile/:userId', async (req, res) => {
     try {
-        const user = await User.findById(req.params.userId).select('username whatsappNumber teamStrength screenshotUrl fullname approvalStatus');
+        const user = await User.findById(req.params.userId).select('username whatsappNumber teamStrength screenshotUrl fullname profileImage approvalStatus');
         if (!user) return res.status(404).json({ success: false, error: 'User not found.' });
         res.status(200).json({ success: true, data: user });
     } catch (error) {
@@ -174,26 +174,38 @@ router.get('/user/:userId', async (req, res) => {
     }
 });
 
+
+// routes/auth.js
+
 // @desc    Update user profile 
+// @route   PUT /api/v1/auth/profile/:userId
 router.put('/profile/:userId', async (req, res) => {
     try {
         const user = await User.findById(req.params.userId);
         if (!user) return res.status(404).json({ success: false, error: 'User not found.' });
 
-        const { fullname, username, whatsappNumber, teamStrength, screenshotUrl, approvalStatus } = req.body;
+        // 🚀 FIXED: Added profileImage to the request body destructuring block!
+        const { fullname, username, whatsappNumber, teamStrength, screenshotUrl, profileImage, approvalStatus } = req.body;
+        
         if (fullname !== undefined) user.fullname = fullname;
         if (username !== undefined) user.username = username;
         if (whatsappNumber !== undefined) user.whatsappNumber = whatsappNumber;
         if (teamStrength !== undefined) user.teamStrength = teamStrength;
         if (screenshotUrl !== undefined) user.screenshotUrl = screenshotUrl;
         if (approvalStatus !== undefined) user.approvalStatus = approvalStatus; 
+        
+        // 🚀 FIXED: Save the updated avatar link securely down to MongoDB!
+        if (profileImage !== undefined) user.profileImage = profileImage; 
 
         await user.save();
+        
+        // Return the fresh updated data block including the avatar string
         res.status(200).json({ success: true, message: 'Profile updated successfully.', data: user });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
 });
+
 // @desc    Book a slot for the upcoming league cycle
 // @route   POST /api/v1/auth/book-slot/:userId
 router.post('/book-slot/:userId', async (req, res) => {
@@ -230,7 +242,7 @@ router.put('/notifications/:userId/read', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
-// routes/auth.js
+
 
 // @desc    Clear all notifications for a specific profile user document
 // @route   POST /api/v1/auth/profile/clear-notifications
@@ -242,8 +254,11 @@ router.post('/profile/clear-notifications', async (req, res) => {
             return res.status(400).json({ success: false, error: 'Provide a target userId context.' });
         }
 
-        // Empty out the notification sub-documents array cleanly
         await User.findByIdAndUpdate(userId, { $set: { notifications: [] } });
+
+        // 🚀 REAL-TIME PUSH: Tell the frontend right now that the array is empty!
+        const io = req.app.get('io');
+        io.to(userId).emit('notifications_updated', []);
 
         res.status(200).json({ 
             success: true, 
@@ -251,6 +266,68 @@ router.post('/profile/clear-notifications', async (req, res) => {
         });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+
+// routes/auth.js
+
+// @desc    Upload or Update Personal Manager Profile Picture
+// @route   POST /api/v1/auth/profile/:userId/upload-avatar
+router.post('/profile/:userId/upload-avatar', async (req, res) => {
+    try {
+        const { image } = req.body;
+        const { userId } = req.params;
+
+        if (!image) {
+            return res.status(400).json({ success: false, error: 'Please select an image file to upload.' });
+        }
+
+        const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+        const uploadPreset = process.env.CLOUDINARY_UPLOAD_PRESET;
+
+        if (!cloudName || !uploadPreset) {
+            return res.status(500).json({ success: false, error: 'Cloudinary server credentials are missing.' });
+        }
+
+        // Convert the incoming base64 string into a clean binary Buffer instance
+        const cleanBase64 = image.replace(/^data:image\/\w+;base64,/, "");
+        const imageBuffer = Buffer.from(cleanBase64, 'base64');
+
+        // Pack it inside a native backend FormData container
+        const uploadForm = new FormData();
+        const imageBlob = new Blob([imageBuffer], { type: 'image/jpeg' });
+        uploadForm.append('file', imageBlob, 'manager_avatar.jpg');
+        uploadForm.append('upload_preset', uploadPreset);
+
+        // Stream directly to Cloudinary open API endpoint
+        const cloudinaryUrl = `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`;
+        const cloudResponse = await axios.post(cloudinaryUrl, uploadForm, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+        });
+
+        const uploadedAssetUrl = cloudResponse.data.secure_url;
+
+        // Save down exclusively to the new 'profileImage' field
+        const updatedUser = await User.findByIdAndUpdate(
+            userId,
+            { $set: { profileImage: uploadedAssetUrl } },
+            { new: true }
+        ).select('-password -__v');
+
+        if (!updatedUser) {
+            return res.status(404).json({ success: false, error: 'Manager account not found.' });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: 'Profile avatar updated successfully!',
+            data: { profileImage: updatedUser.profileImage }
+        });
+
+    } catch (error) {
+        console.error("Avatar Upload Routing Failure:", error.message);
+        res.status(500).json({ success: false, error: 'Failed to update profile picture on server.' });
     }
 });
 

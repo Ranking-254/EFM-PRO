@@ -47,6 +47,11 @@ const UserSchema = new mongoose.Schema({
         type: Date,
         default: Date.now
     },
+    // models/User.js (Add this inside your schema definition)
+profileImage: {
+    type: String,
+    default: '' // Stored as a Cloudinary secure URL once uploaded
+},
     // Add these fields inside your mongoose.Schema object layout:
     hasBookedUpcoming: {
         type: Boolean,

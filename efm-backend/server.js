@@ -3,6 +3,8 @@
 require("./instrument");
 
 const express = require('express');
+const http = require('http'); // 🚀 IMPORTED: Native Node HTTP server module
+const { Server } = require('socket.io'); // 🚀 IMPORTED: Socket.io Server class
 const cors = require('cors');
 const helmet = require('helmet'); // 🚀 Import helmet
 const dotenv = require('dotenv');
@@ -16,7 +18,45 @@ const Sentry = require("@sentry/node"); // Import Sentry instance for error trac
 
 
 const app = express();
+const server = http.createServer(app); // 🚀 ATTACHED: Created HTTP server instance wrapper for Express
 const PORT = process.env.PORT || 5000;
+
+// 🚀 INITIALIZED: Bound Socket.io instance to the HTTP server instance with your project origins mapped out
+const io = new Server(server, {
+    cors: {
+        origin: ["https://efm-pro.vercel.app", "http://localhost:5173", "https://efm-pro.me.ke", "https://efm-frontend.vercel.app"],
+        credentials: true,
+        methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+    }
+});
+
+// 🚀 MAPPED: Global active connection mapping logic for the real-time tunnel network pipeline
+const activeConnections = new Map();
+
+io.on('connection', (socket) => {
+    console.log(`🔌 New real-time socket link open: ${socket.id}`);
+
+    socket.on('register_manager', (userId) => {
+        if (userId) {
+            activeConnections.set(userId, socket.id);
+            socket.join(userId);
+            console.log(`👤 Manager ${userId} locked onto socket room: ${socket.id}`);
+        }
+    });
+
+    socket.on('disconnect', () => {
+        for (let [userId, socketId] of activeConnections.entries()) {
+            if (socketId === socket.id) {
+                activeConnections.delete(userId);
+                console.log(`❌ Manager ${userId} left the socket network channel.`);
+                break;
+            }
+        }
+    });
+});
+
+// 🚀 LINKED: Injected socket instance globally inside your Express context environment instance settings configuration
+app.set('io', io);
 
 app.set('trust proxy', 1); // Trust first proxy for correct IP logging and rate limiting behind proxies/load balancers
 
@@ -88,6 +128,7 @@ app.get('/', (req, res) => {
 // This must be positioned AFTER all controllers/routes, but BEFORE any custom error handling layers
 Sentry.setupExpressErrorHandler(app);
 
-app.listen(PORT, () => {
+// ⚠️ FIXED EXECUTION BRIDGE: Swapped app.listen out for server.listen so socket tunnels activate seamlessly
+server.listen(PORT, () => {
     console.log(`[EFM-PRO] Server initialized and happily humming on port http://localhost:${PORT}`);
 });

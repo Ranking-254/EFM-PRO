@@ -4,7 +4,13 @@ const router = express.Router();
 const League = require('../models/League');
 const User = require('../models/user');
 const Fixture = require('../models/Fixture'); 
-const generateRoundRobin = require('../utils/scheduler'); 
+// 🚀 FIXED: Swapped out single function import for our Advanced Triple-Format Engine Map Objects
+const { 
+    generateClassicLeague, 
+    generateKnockoutBracket, 
+    generateGroupAndKnockout 
+} = require('../utils/scheduler');
+
 const crypto = require('crypto');
 const mongoose = require('mongoose'); 
 
@@ -208,7 +214,6 @@ router.post('/', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
-
 // ========================================================
 // @desc    Join an open recruiting league group slot
 // @route   POST /api/v1/leagues/:id/join
@@ -253,7 +258,20 @@ router.post('/:id/join', async (req, res) => {
         await league.save();
 
         if (triggerScheduleGeneration) {
-            const schedulePlan = generateRoundRobin(league.players, league.rounds || 0);
+            let schedulePlan = [];
+            const formatType = league.tournamentFormat || 'classic';
+
+            // 🚀 DYNAMIC GENERATION ROUTER: Intelligently switches logic without dropping notifications
+            if (formatType === 'knockout') {
+                schedulePlan = generateKnockoutBracket(league.players);
+            } else if (formatType === 'group_knockout') {
+                schedulePlan = generateGroupAndKnockout(league.players, { 
+                    groupsCount: league.groupStageCount || 4 
+                });
+            } else {
+                // Classic League configuration (Home/Away leg optimization matrix)
+                schedulePlan = generateClassicLeague(league.players, league.rounds || 1);
+            }
 
             const finalizedFixtures = schedulePlan.map(match => ({
                 leagueId: league._id,
@@ -285,6 +303,7 @@ router.post('/:id/join', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
+
 
 router.get('/:id/fixtures', async (req, res) => {
     try {
@@ -599,20 +618,21 @@ router.patch('/fixtures/:fixtureId/resolve', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
-
 // ========================================================
 // @desc    Update league configuration parameters
 // @route   PUT /api/v1/leagues/:id
 // ========================================================
 router.put('/:id', async (req, res) => {
     try {
-        const { name, maxStrengthLimit, capacity, status, rounds, rules } = req.body;
+        // 🚀 UPDATED: Extracted tournamentFormat and groupStageCount from the payload request body
+        const { name, maxStrengthLimit, capacity, status, rounds, rules, tournamentFormat, groupStageCount } = req.body;
         const league = await League.findById(req.params.id);
 
         if (!league) {
             return res.status(404).json({ success: false, error: "League not found." });
         }
 
+        // Apply standard updates
         if (name !== undefined) league.name = name;
         if (maxStrengthLimit !== undefined) league.maxStrengthLimit = maxStrengthLimit;
         if (capacity !== undefined) {
@@ -627,7 +647,12 @@ router.put('/:id', async (req, res) => {
         if (rules !== undefined) {
             league.rules = rules;
         }
+        
+        // 🚀 UPDATED: Persist new formatting parameters directly to the league document state
+        if (tournamentFormat !== undefined) league.tournamentFormat = tournamentFormat;
+        if (groupStageCount !== undefined) league.groupStageCount = parseInt(groupStageCount, 10) || 4;
 
+        // Track if a manual scheduling generation override needs to be triggered
         if (rounds !== undefined && rounds !== null && rounds !== '') {
             const parsedRounds = parseInt(rounds, 10);
 
@@ -639,9 +664,23 @@ router.put('/:id', async (req, res) => {
                 league.rounds = parsedRounds;
 
                 if (league.status === 'active' && league.players.length > 0) {
+                    // Wipe the stale, old fixtures list completely
                     await Fixture.deleteMany({ leagueId: league._id });
 
-                    const newSchedulePlan = generateRoundRobin(league.players, parsedRounds);
+                    let newSchedulePlan = [];
+                    const formatType = league.tournamentFormat || 'classic';
+
+                    // 🚀 FIXED: Dynamic generation mapping selector following our advanced scheduling engine parameters
+                    if (formatType === 'knockout') {
+                        newSchedulePlan = generateKnockoutBracket(league.players);
+                    } else if (formatType === 'group_knockout') {
+                        newSchedulePlan = generateGroupAndKnockout(league.players, { 
+                            groupsCount: league.groupStageCount || 4 
+                        });
+                    } else {
+                        // Falls back safely to your multi-round classic configuration legs matrix
+                        newSchedulePlan = generateClassicLeague(league.players, parsedRounds);
+                    }
 
                     const updatedFixtures = newSchedulePlan.map(match => ({
                         leagueId: league._id,

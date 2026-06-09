@@ -22,7 +22,9 @@ const AdminReserveManager = ({ onCounterChange }) => {
         name: '',
         maxStrengthLimit: 3200,
         capacity: 10,
-        rounds: 0,
+        rounds: 1, // Defaulting to 1 leg baseline 
+        tournamentFormat: 'classic', // 🚀 NEW: State tracker mapping type variants
+        groupStageCount: 4, // 🚀 NEW: Mini pool bucket partitions count 
         rules: '' 
     });
 
@@ -31,7 +33,9 @@ const AdminReserveManager = ({ onCounterChange }) => {
         name: '',
         maxStrengthLimit: 3200,
         capacity: 10,
-        rounds: 0,
+        rounds: 3, 
+        tournamentFormat: 'classic', // 🚀 NEW: Inline format selector configuration 
+        groupStageCount: 4, // 🚀 NEW: Inline group pool configuration multiplier
         rules: '' 
     });
 
@@ -92,6 +96,8 @@ const AdminReserveManager = ({ onCounterChange }) => {
                 maxStrengthLimit: bulkLeagueForm.maxStrengthLimit,
                 capacity: bulkLeagueForm.capacity,
                 rounds: bulkLeagueForm.rounds,
+                tournamentFormat: bulkLeagueForm.tournamentFormat, // 🚀 TRANSMITTING FORMAT TARGETS
+                groupStageCount: bulkLeagueForm.tournamentFormat === 'group_knockout' ? bulkLeagueForm.groupStageCount : 0, // 🚀 TRANSMITTING GROUP BREAKPOINTS
                 playerIds: selectedPlayerIds, 
                 rules: bulkLeagueForm.rules || '' 
             };
@@ -102,7 +108,7 @@ const AdminReserveManager = ({ onCounterChange }) => {
                 setSuccess(`Bulk Success: "${bulkLeagueForm.name}" launched with ${selectedPlayerIds.length} managers!`);
                 setReservePlayers(prev => prev.filter(p => !selectedPlayerIds.includes(p._id)));
                 setSelectedPlayerIds([]);
-                setBulkLeagueForm({ name: '', maxStrengthLimit: 3200, capacity: 10, rounds: 0, rules: '' });
+                setBulkLeagueForm({ name: '', maxStrengthLimit: 3200, capacity: 10, rounds: 1, tournamentFormat: 'classic', groupStageCount: 4, rules: '' });
                 if (onCounterChange) onCounterChange();
             }
         } catch (err) {
@@ -163,7 +169,9 @@ const AdminReserveManager = ({ onCounterChange }) => {
                 name: `${player.username.toUpperCase()}_League`,
                 maxStrengthLimit: player.teamStrength || 3200,
                 capacity: 10,
-                rounds: 3, // 🚀 UPDATED: Modified fallback baseline default directly from 0 to 3
+                rounds: 3, 
+                tournamentFormat: 'classic',
+                groupStageCount: 4,
                 rules: '' 
             });
         }
@@ -180,7 +188,9 @@ const AdminReserveManager = ({ onCounterChange }) => {
                 leagueName: inlineLeagueForm.name,
                 maxStrengthLimit: inlineLeagueForm.maxStrengthLimit,
                 capacity: inlineLeagueForm.capacity,
-                rounds: inlineLeagueForm.rounds, // 🚀 TRANSMITTING CLEANLY NOW
+                rounds: inlineLeagueForm.rounds, 
+                tournamentFormat: inlineLeagueForm.tournamentFormat, // 🚀 TRANSMITTING SINGLE INLINE FORMATS
+                groupStageCount: inlineLeagueForm.tournamentFormat === 'group_knockout' ? inlineLeagueForm.groupStageCount : 0,
                 playerIds: [playerId],
                 rules: inlineLeagueForm.rules || '' 
             };
@@ -210,7 +220,7 @@ const AdminReserveManager = ({ onCounterChange }) => {
     }
 
     return (
-        <div className="space-y-6 animate-in fade-in duration-200">
+        <div className="space-y-6 animate-in fade-in duration-200 text-left">
             <div className="bg-[#0f131c] border border-slate-800/80 rounded-2xl p-5">
                 <h4 className="text-base font-black text-white tracking-tight">Manager Application Desk</h4>
                 <p className="text-xs text-slate-400 mt-1">
@@ -330,7 +340,37 @@ const AdminReserveManager = ({ onCounterChange }) => {
                                                     ⚡ Launch Isolated League for @{player.username}
                                                 </div>
                                                 <form onSubmit={(e) => handleInlineProvisionSubmit(e, player._id)} className="space-y-4">
-                                                    {/* 🚀 FIXED: Grid layout altered from grid-cols-3 to grid-cols-4 to neatly make space for the rounds tracker field */}
+                                                    
+                                                    {/* Dynamic Format Selector Controls inside individual provisioning matrix */}
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-950/40 p-3 border border-slate-900 rounded-xl">
+                                                        <div className="space-y-1">
+                                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Tournament Structure</label>
+                                                            <select
+                                                                value={inlineLeagueForm.tournamentFormat}
+                                                                onChange={(e) => setInlineLeagueForm({ ...inlineLeagueForm, tournamentFormat: e.target.value })}
+                                                                className="w-full bg-[#0f131c] border border-slate-800 rounded-xl px-3 py-2 text-xs text-cyan-400 font-bold focus:outline-none"
+                                                            >
+                                                                <option value="classic">🏆 Classic League (Round Robin)</option>
+                                                                <option value="knockout">🪓 Bracket Elimination (Knockout)</option>
+                                                                <option value="group_knockout">⭐ Group Stage + Knockout</option>
+                                                            </select>
+                                                        </div>
+                                                        {inlineLeagueForm.tournamentFormat === 'group_knockout' && (
+                                                            <div className="space-y-1">
+                                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Groups Partition Count</label>
+                                                                <select
+                                                                    value={inlineLeagueForm.groupStageCount}
+                                                                    onChange={(e) => setInlineLeagueForm({ ...inlineLeagueForm, groupStageCount: parseInt(e.target.value, 10) })}
+                                                                    className="w-full bg-[#0f131c] border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none"
+                                                                >
+                                                                    <option value="2">2 Groups pool</option>
+                                                                    <option value="4">4 Groups pool</option>
+                                                                    <option value="8">8 Groups pool</option>
+                                                                </select>
+                                                            </div>
+                                                        )}
+                                                    </div>
+
                                                     <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
                                                         <div className="space-y-1 sm:col-span-1">
                                                             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">League Name</label>
@@ -359,9 +399,8 @@ const AdminReserveManager = ({ onCounterChange }) => {
                                                                 className="w-full bg-[#0f131c] border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none"
                                                             />
                                                         </div>
-                                                        {/* 🚀 FIXED: Added the missing Rounds Input Box element directly inside the single player launch configuration form */}
                                                         <div className="space-y-1 sm:col-span-1">
-                                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Rounds Count</label>
+                                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Rounds Legs</label>
                                                             <input
                                                                 type="number" required
                                                                 value={inlineLeagueForm.rounds}
@@ -429,6 +468,49 @@ const AdminReserveManager = ({ onCounterChange }) => {
                                 />
                             </div>
 
+                            {/* 🚀 FORMAT SELECTION DROP HUD HUD HUD */}
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Tournament Format Structure</label>
+                                <select
+                                    value={bulkLeagueForm.tournamentFormat}
+                                    onChange={(e) => setBulkLeagueForm({ ...bulkLeagueForm, tournamentFormat: e.target.value })}
+                                    className="w-full bg-[#0b0f17] border border-slate-800 text-xs text-cyan-400 font-bold px-3 py-2.5 rounded-xl focus:outline-none focus:border-cyan-500 transition-all"
+                                >
+                                    <option value="classic">🏆 Classic League (Round Robin)</option>
+                                    <option value="knockout">🪓 Bracket Elimination (Knockout)</option>
+                                    <option value="group_knockout">⭐ Group Stage + Knockout</option>
+                                </select>
+                                
+                                {/* 🚀 FORMAT INTEL HINT BADGES DISPLAY ROW */}
+                                <div className="mt-1.5 px-1 py-1 bg-slate-950/40 rounded-lg border border-slate-900 text-[10px] text-slate-400 font-medium leading-relaxed">
+                                    {bulkLeagueForm.tournamentFormat === 'classic' && (
+                                        <span className="text-cyan-400 font-semibold">💡 Hint: EPL / LaLiga Style. Every manager plays against each other sequentially over scheduled legs.</span>
+                                    )}
+                                    {bulkLeagueForm.tournamentFormat === 'knockout' && (
+                                        <span className="text-amber-400 font-semibold">💡 Hint: UCL Championship Knockout / FA Cup Style. Single elimination sudden death layout tree with automatic progression mapping.</span>
+                                    )}
+                                    {bulkLeagueForm.tournamentFormat === 'group_knockout' && (
+                                        <span className="text-emerald-400 font-semibold">💡 Hint: Authentic World Cup / Champions League Style. Splits users into local group pools, then advances the top 2 into brackets.</span>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Dynamic configuration options for nested sub-group dividers */}
+                            {bulkLeagueForm.tournamentFormat === 'group_knockout' && (
+                                <div className="space-y-1.5 bg-emerald-500/[0.02] p-3 border border-emerald-500/10 rounded-xl animate-in slide-in-from-top-2 duration-150">
+                                    <label className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block">Group Pool Dividers Count</label>
+                                    <select
+                                        value={bulkLeagueForm.groupStageCount}
+                                        onChange={(e) => setBulkLeagueForm({ ...bulkLeagueForm, groupStageCount: parseInt(e.target.value, 10) })}
+                                        className="w-full bg-[#0b0f17] border border-slate-800 text-xs text-white font-mono px-3 py-2.5 rounded-xl focus:outline-none"
+                                    >
+                                        <option value="2">Divide into 2 Groups</option>
+                                        <option value="4">Divide into 4 Groups (Standard)</option>
+                                        <option value="8">Divide into 8 Groups</option>
+                                    </select>
+                                </div>
+                            )}
+
                             <div className="grid grid-cols-2 gap-3">
                                 <div className="space-y-1.5">
                                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Max STR Rating</label>
@@ -451,12 +533,15 @@ const AdminReserveManager = ({ onCounterChange }) => {
                             </div>
 
                             <div className="space-y-1.5">
-                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Rounds (0 = full robin)</label>
+                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                    {bulkLeagueForm.tournamentFormat === 'classic' ? 'Rounds (1 = Single, 2 = Home & Away)' : 'Leg Rounds Count'}
+                                </label>
                                 <input
                                     type="number" required
                                     value={bulkLeagueForm.rounds}
+                                    disabled={bulkLeagueForm.tournamentFormat === 'knockout'}
                                     onChange={(e) => setBulkLeagueForm({ ...bulkLeagueForm, rounds: parseInt(e.target.value, 10) || 0 })}
-                                    className="w-full bg-[#0b0f17] border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white font-mono focus:outline-none"
+                                    className="w-full bg-[#0b0f17] border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white font-mono focus:outline-none disabled:opacity-30 disabled:cursor-not-allowed"
                                 />
                             </div>
 

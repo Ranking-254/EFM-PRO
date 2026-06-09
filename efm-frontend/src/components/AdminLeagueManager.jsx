@@ -15,7 +15,9 @@ const AdminLeagueManager = ({ leagues, onRefresh, onViewLeague }) => {
         capacity: 10,
         rounds: 0,
         status: 'recruiting',
-        rules: '',       // 🚀 ADDED: Rules text state holder
+        tournamentFormat: 'classic',    // 🚀 NEW: Tracks tournament format state
+        groupStageCount: 4,             // 🚀 NEW: Tracks sub-group pool configuration
+        rules: '',       
     });
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState('');
@@ -55,7 +57,9 @@ const AdminLeagueManager = ({ leagues, onRefresh, onViewLeague }) => {
             capacity: 10, 
             rounds: 0, 
             status: 'recruiting',
-            rules: '',       // 🚀 ADDED: Clear field on reset
+            tournamentFormat: 'classic', // 🚀 NEW: Clean slate resetting link
+            groupStageCount: 4,          // 🚀 NEW: Clean slate resetting link
+            rules: '',       
         });
         setEditingLeague(null);
         setShowCreateForm(false);
@@ -70,7 +74,9 @@ const AdminLeagueManager = ({ leagues, onRefresh, onViewLeague }) => {
             capacity: league.capacity,
             rounds: league.rounds || 0,
             status: league.status,
-            rules: league.rules || '',          // 🚀 ADDED: Hydrate rules on edit
+            tournamentFormat: league.tournamentFormat || 'classic', // 🚀 NEW: Hydrate format tracking
+            groupStageCount: league.groupStageCount || 4,          // 🚀 NEW: Hydrate group configuration
+            rules: league.rules || '',          
         });
         setEditingLeague(league);
         setShowCreateForm(true);
@@ -92,7 +98,9 @@ const AdminLeagueManager = ({ leagues, onRefresh, onViewLeague }) => {
                         capacity: formData.capacity, 
                         rounds: formData.rounds,
                         status: formData.status,
-                        rules: formData.rules,         // 🚀 ADDED: Payload transmission link
+                        tournamentFormat: formData.tournamentFormat, // 🚀 TRANSMITTING NEW PROPERTIES
+                        groupStageCount: formData.tournamentFormat === 'group_knockout' ? formData.groupStageCount : 0, // 🚀 TRANSMITTING
+                        rules: formData.rules,         
                     }
                 );
                 if (res.data.success) {
@@ -106,8 +114,11 @@ const AdminLeagueManager = ({ leagues, onRefresh, onViewLeague }) => {
                     maxStrengthLimit: formData.maxStrengthLimit,
                     capacity: formData.capacity,
                     rounds: formData.rounds,
+                    status: formData.status,
+                    tournamentFormat: formData.tournamentFormat, // 🚀 TRANSMITTING NEW PROPERTIES
+                    groupStageCount: formData.tournamentFormat === 'group_knockout' ? formData.groupStageCount : 0, // 🚀 TRANSMITTING
                     players: [],
-                    rules: formData.rules,         // 🚀 ADDED: Payload transmission link
+                    rules: formData.rules,         
                 });
                 if (res.data.success) {
                     setSuccess('League created successfully!');
@@ -158,7 +169,7 @@ const AdminLeagueManager = ({ leagues, onRefresh, onViewLeague }) => {
     };
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-6 text-left">
             <div className="bg-amber-400/5 border border-amber-400/20 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div>
                     <h4 className="text-base font-black text-white tracking-tight">Tournament Management</h4>
@@ -227,37 +238,83 @@ const AdminLeagueManager = ({ leagues, onRefresh, onViewLeague }) => {
                                 <p className="text-[10px] text-slate-500">Min 2, Max 100</p>
                             </div>
                             <div className="space-y-2">
-                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Rounds (0 = full round-robin)</label>
+                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                                    {formData.tournamentFormat === 'classic' ? 'Rounds (1 = Single, 2 = Home & Away)' : 'Leg Rounds Count'}
+                                </label>
                                 <input
                                     type="number"
                                     value={formData.rounds}
+                                    disabled={formData.tournamentFormat === 'knockout'}
                                     onChange={(e) => setFormData({ ...formData, rounds: parseInt(e.target.value) || 0 })}
                                     min="0"
                                     max="50"
                                     required
-                                    className="w-full bg-[#0b0f17] border border-slate-800 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all"
+                                    className="w-full bg-[#0b0f17] border border-slate-800 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
                                 />
                                 <p className="text-[10px] text-slate-500">0 = every team plays each other once</p>
                             </div>
-                            
-                            {/* 🚀 ADDED: Tournament Scheduled Launch Date Input Element Wrapper */}
-                            
-
-                            <div className="space-y-2">
-                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Status</label>
-                                <select
-                                    value={formData.status}
-                                    onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                                    className="w-full bg-[#0b0f17] border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all"
-                                >
-                                    <option value="recruiting">Recruiting</option>
-                                    <option value="active">Active</option>
-                                    <option value="completed">Completed</option>
-                                </select>
-                            </div>
                         </div>
 
-                        {/* 🚀 ADDED: Custom Dynamic Tournament-Wide Rules Textarea Input Platform Component */}
+                        {/* 🚀 NEW DYNAMIC FORMAT SELECTOR AND DESCRIPTION BOX */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-950/40 p-4 border border-slate-900 rounded-2xl">
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Tournament Structure Format</label>
+                                <select
+                                    value={formData.tournamentFormat}
+                                    onChange={(e) => setFormData({ ...formData, tournamentFormat: e.target.value })}
+                                    className="w-full bg-[#0b0f17] border border-slate-800 text-xs text-cyan-400 font-bold px-3 py-2.5 rounded-xl focus:outline-none focus:border-cyan-500 transition-all"
+                                >
+                                    <option value="classic">🏆 Classic League (Round Robin)</option>
+                                    <option value="knockout">🪓 Bracket Elimination (Knockout)</option>
+                                    <option value="group_knockout">⭐ Group Stage + Knockout</option>
+                                </select>
+                                
+                                <div className="mt-1 px-1 text-[10px] text-slate-400 font-medium leading-relaxed">
+                                    {formData.tournamentFormat === 'classic' && (
+                                        <span className="text-cyan-400 font-semibold">💡 Hint: EPL / LaLiga Style. Every manager plays against each other sequentially over scheduled legs.</span>
+                                    )}
+                                    {formData.tournamentFormat === 'knockout' && (
+                                        <span className="text-amber-400 font-semibold">💡 Hint: UCL Championship Knockout / FA Cup Style. Single elimination sudden death layout tree with automatic progression mapping.</span>
+                                    )}
+                                    {formData.tournamentFormat === 'group_knockout' && (
+                                        <span className="text-emerald-400 font-semibold">💡 Hint: Authentic World Cup / Champions League Style. Splits users into local group pools, then advances the top 2 into brackets.</span>
+                                    )}
+                                </div>
+                            </div>
+
+                            {formData.tournamentFormat === 'group_knockout' ? (
+                                <div className="space-y-1.5 animate-in slide-in-from-top-2 duration-150">
+                                    <label className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block">Group Pool Dividers Count</label>
+                                    <select
+                                        value={formData.groupStageCount}
+                                        onChange={(e) => setFormData({ ...formData, groupStageCount: parseInt(e.target.value, 10) })}
+                                        className="w-full bg-[#0b0f17] border border-slate-800 text-xs text-white font-mono px-3 py-2.5 rounded-xl focus:outline-none"
+                                    >
+                                        <option value="2">Divide into 2 Groups</option>
+                                        <option value="4">Divide into 4 Groups (Standard)</option>
+                                        <option value="8">Divide into 8 Groups</option>
+                                    </select>
+                                </div>
+                            ) : (
+                                <div className="hidden sm:block text-center text-slate-600 text-[11px] self-center font-mono uppercase tracking-wider font-semibold">
+                                    ⚙️ Structural Rules Set
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Status</label>
+                            <select
+                                value={formData.status}
+                                onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                                className="w-full bg-[#0b0f17] border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all"
+                            >
+                                <option value="recruiting">Recruiting</option>
+                                <option value="active">Active</option>
+                                <option value="completed">Completed</option>
+                            </select>
+                        </div>
+
                         <div className="space-y-2">
                             <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Tournament Rules & Instructions</label>
                             <textarea

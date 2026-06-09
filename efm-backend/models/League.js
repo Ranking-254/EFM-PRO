@@ -33,6 +33,19 @@ const LeagueSchema = new mongoose.Schema({
         type: Number,
         default: 1
     },
+
+    // 🚀 NEW: Tracks the style configuration structure used by your fixtures generator engine
+    tournamentFormat: {
+        type: String,
+        enum: ['classic', 'knockout', 'group_knockout'],
+        default: 'classic'
+    },
+
+    // 🚀 NEW: Specifies how many group pools to divide players into (Only active for group_knockout)
+    groupStageCount: {
+        type: Number,
+        default: 4
+    },
     
     // We will store an array of user Object IDs representing players who have joined this specific league
     players: [
@@ -42,7 +55,7 @@ const LeagueSchema = new mongoose.Schema({
         }
     ],
 
-    // 🚀 ADDED: Custom text field for tournament rules and special manager guidelines
+    // Custom text field for tournament rules and special manager guidelines
     rules: {
         type: String,
         default: ''

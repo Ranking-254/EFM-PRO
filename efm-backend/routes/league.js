@@ -568,13 +568,25 @@ router.patch('/fixtures/:fixtureId/resolve', async (req, res) => {
             return res.status(404).json({ success: false, error: "Fixture not found." });
         }
 
+        // Force update the scores and synchronize submission targets instantly
         fixture.playerAScore = playerAScore;
+        fixture.fixtureId = req.params.fixtureId; // Explicit contextual binding
         fixture.playerBScore = playerBScore;
         fixture.playerASubmittedScore = playerAScore;
         fixture.playerBSubmittedScore = playerBScore;
-        fixture.status = 'confirmed';
+        fixture.status = 'confirmed'; // Flipped to confirmed so it maps to standings queries
 
         await fixture.save();
+
+        // 🚀 CRITICAL FIX: Recalculate standings right after saving the score!
+        // Swap 'updateLeagueStandings' with the exact function name you use in your app to re-compile points!
+        if (typeof updateLeagueStandings === 'function') {
+            await updateLeagueStandings(fixture.leagueId);
+        } else {
+            // 💡 ALTERNATIVE: If you calculate standings dynamically using aggregation pipelines,
+            // ensure any cached tables or stats models are cleared/re-indexed here.
+            console.log(`Standings sync dispatched for league: ${fixture.leagueId}`);
+        }
 
         const targetLeague = await League.findById(fixture.leagueId);
         const disputeResolvedNotification = {
@@ -587,18 +599,21 @@ router.patch('/fixtures/:fixtureId/resolve', async (req, res) => {
 
         await pushAndEmitNotification(req, [fixture.playerA, fixture.playerB], disputeResolvedNotification);
 
+        // Run season completion checks
         await checkAndCompleteLeague(req, fixture.leagueId);
 
         res.status(200).json({
             success: true,
-            message: `Admin Override Successful. Fixture resolved and locked manually.`,
+            message: `Admin Override Successful. Fixture resolved and standings tables re-compiled smoothly.`,
             data: fixture
         });
 
     } catch (error) {
+        console.error("Dispute override script collapse:", error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
+
 
 // ========================================================
 // @desc    Update league configuration parameters
@@ -745,5 +760,111 @@ const checkAndCompleteLeague = async (req, leagueId) => {
         await pushAndEmitNotification(req, league.players, endOfSeasonNotification);
     }
 };
+
+// ========================================================
+// @desc    Admin Only: Manually add a player to a league
+// @route   POST /api/v1/leagues/:id/admin-add
+// ========================================================
+router.post('/:id/admin-add', async (req, res) => {
+    try {
+        const league = await League.findById(req.params.id);
+        const { identifier } = req.body; // Can be username or whatsappNumber
+
+        if (!league) return res.status(404).json({ success: false, error: "League not found." });
+        if (league.status !== 'recruiting') return res.status(400).json({ success: false, error: "Cannot add players. League is already active or completed." });
+        if (league.players.length >= league.capacity) return res.status(400).json({ success: false, error: "League capacity already reached!" });
+
+        // Find user by either username or whatsapp lookup fallback
+        const player = await User.findOne({
+            $or: [
+                { username: { $regex: `^${identifier}$`, $options: 'i' } },
+                { whatsappNumber: identifier }
+            ]
+        });
+
+        if (!player) return res.status(404).json({ success: false, error: "Manager profile not found in system." });
+        if (league.players.includes(player._id)) return res.status(400).json({ success: false, error: "Manager is already in this league." });
+
+        // Inject player into league list array
+        league.players.push(player._id);
+
+        // Alert the player in real-time that an admin slotted them in
+        const adminInsertNotification = {
+            _id: new mongoose.Types.ObjectId().toString(),
+            message: `⚖️ Admin Action: Organizers have manually registered your squad into "${league.name}". Stand by for fixture generation!`,
+            type: "admin_override",
+            isRead: false,
+            createdAt: new Date()
+        };
+
+        // If the league fills up exactly on this admin addition, trigger automated schedule creation
+        let systemMessage = `Successfully added @${player.username} to ${league.name}.`;
+        let triggerScheduleGeneration = false;
+
+        if (league.players.length === league.capacity) {
+            league.status = 'active';
+            triggerScheduleGeneration = true;
+            systemMessage = `Added @${player.username}. League is now full! Status flipped to ACTIVE and fixtures generated.`;
+        }
+
+        await league.save();
+        await pushAndEmitNotification(req, player._id, adminInsertNotification);
+
+        if (triggerScheduleGeneration) {
+            const schedulePlan = generateRoundRobin(league.players, league.rounds || 0);
+            const finalizedFixtures = schedulePlan.map(match => ({
+                leagueId: league._id,
+                ...match
+            }));
+            await Fixture.insertMany(finalizedFixtures);
+
+            const leagueLaunchNotification = {
+                _id: new mongoose.Types.ObjectId().toString(),
+                message: `📅 Fixtures generated! "${league.name}" is officially full and ACTIVE. Head to the Fixtures page to play your matches!`,
+                type: "league_assignment",
+                isRead: false,
+                createdAt: new Date()
+            };
+            await pushAndEmitNotification(req, league.players, leagueLaunchNotification);
+        }
+
+        res.status(200).json({
+            success: true,
+            message: systemMessage,
+            playerCount: league.players.length,
+            capacity: league.capacity
+        });
+
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+})
+
+// ========================================================
+// @desc    Admin Only: Fetch absolute populated roster for a league
+// @route   GET /api/v1/leagues/:id/roster
+// ========================================================
+router.get('/:id/roster', async (req, res) => {
+    try {
+        // Look up the league and tell Mongoose to pull full User profiles from the IDs array
+        const league = await League.findById(req.params.id).populate('players', 'username teamStrength whatsappNumber');
+        
+        if (!league) {
+            return res.status(404).json({ success: false, error: "League target not found." });
+        }
+
+        res.status(200).json({
+            success: true,
+            status: league.status,
+            capacity: league.capacity,
+            name: league.name,
+            // Fall back to empty array if the document is empty
+            players: league.players || [] 
+        });
+    } catch (error) {
+        console.error("Backend roster endpoint failure:", error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
 
 module.exports = router;

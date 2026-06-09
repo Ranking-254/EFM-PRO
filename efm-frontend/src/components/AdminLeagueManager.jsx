@@ -1,6 +1,8 @@
 // src/components/AdminLeagueManager.jsx
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+// 🚀 ADDED: Import the roster CRUD overlay component cleanly
+import LeagueRosterModal from './LeagueRosterModal';
 
 const API_BASE_URL = window.location.hostname === 'localhost' 
     ? 'http://localhost:5000/api/v1' 
@@ -9,6 +11,7 @@ const API_BASE_URL = window.location.hostname === 'localhost'
 const AdminLeagueManager = ({ leagues, onRefresh, onViewLeague }) => {
     const [showCreateForm, setShowCreateForm] = useState(false);
     const [editingLeague, setEditingLeague] = useState(null);
+    const [selectedRosterLeague, setSelectedRosterLeague] = useState(null); // 🚀 ADDED: State to manage open roster modal
     const [formData, setFormData] = useState({
         name: '',
         maxStrengthLimit: 3100,
@@ -240,9 +243,6 @@ const AdminLeagueManager = ({ leagues, onRefresh, onViewLeague }) => {
                                 <p className="text-[10px] text-slate-500">0 = every team plays each other once</p>
                             </div>
                             
-                            {/* 🚀 ADDED: Tournament Scheduled Launch Date Input Element Wrapper */}
-                            
-
                             <div className="space-y-2">
                                 <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Status</label>
                                 <select
@@ -257,7 +257,6 @@ const AdminLeagueManager = ({ leagues, onRefresh, onViewLeague }) => {
                             </div>
                         </div>
 
-                        {/* 🚀 ADDED: Custom Dynamic Tournament-Wide Rules Textarea Input Platform Component */}
                         <div className="space-y-2">
                             <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Tournament Rules & Instructions</label>
                             <textarea
@@ -358,6 +357,14 @@ const AdminLeagueManager = ({ leagues, onRefresh, onViewLeague }) => {
                                             >
                                                 Edit
                                             </button>
+                                            {/* 🚀 ADDED: Dynamic Admin Desk Roster Monitor Hook */}
+                                            <button
+                                                type="button"
+                                                onClick={() => setSelectedRosterLeague(league)}
+                                                className="bg-amber-400/10 hover:bg-amber-400/20 text-amber-400 border border-amber-400/30 text-[11px] font-black uppercase tracking-wider py-2 px-3 rounded-lg transition-all"
+                                            >
+                                                Roster
+                                            </button>
                                             <button
                                                 onClick={() => onViewLeague && onViewLeague(league._id)}
                                                 className="bg-cyan-400/10 hover:bg-cyan-400/20 text-cyan-400 border border-cyan-400/30 text-[11px] font-black uppercase tracking-wider py-2 px-3 rounded-lg transition-all"
@@ -411,6 +418,16 @@ const AdminLeagueManager = ({ leagues, onRefresh, onViewLeague }) => {
                     </div>
                 )}
             </div>
+
+            {/* Inside src/components/AdminLeagueManager.jsx */}
+{selectedRosterLeague && (
+    <LeagueRosterModal 
+        league={selectedRosterLeague} 
+        onClose={() => setSelectedRosterLeague(null)}
+        onRosterUpdated={onRefresh}
+        membersMap={membersMap} // 🚀 CRITICAL LINK: Passes populated profiles down to layout loops!
+    />
+)}
         </div>
     );
 };

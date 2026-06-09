@@ -16,7 +16,7 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey })
     const [filter, setFilter] = useState('all');
     const [userBookingState, setUserBookingState] = useState(currentUser?.hasBookedUpcoming || false);
 
-    // 🚀 MODAL STATE ENGINE
+    // MODAL STATE ENGINE
     const [rulesModal, setRulesModal] = useState({ isOpen: false, league: null, targetAction: null });
 
     useEffect(() => {
@@ -106,22 +106,24 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey })
         }
     };
 
-    // 🚀 INTERCEPT ACTION: Show mandatory scrolling rules before navigating to standings
+    // INTERCEPT ACTION: Show mandatory scrolling rules before navigating to standings
     const handleViewStandingsClick = (league, hasJoined) => {
-        // 🚀 FIXED: Now checks if the user has joined OR if the target league status is officially full and active!
+        // FIXED: Checks if the user has joined OR if the target league status is officially full and active!
         if (hasJoined || league.status === 'active') {
             setRulesModal({ isOpen: true, league, targetAction: 'standings' });
         } else {
-            if (onViewLeague) onViewLeague(league._id, 'standings');
+            if (onViewLeague) onViewLeague(league._id, 'standings', league.tournamentFormat);
         }
     };
 
-    // 🚀 PROCEED ACTION: Triggered only after user scrolls and closes rules modal
+    // PROCEED ACTION: Triggered only after user scrolls and closes rules modal
     const executeRulesAcknowledge = () => {
         const { league, targetAction } = rulesModal;
         setRulesModal({ isOpen: false, league: null, targetAction: null });
+        
+        // 🚀 FIXED: Appended structural format tags to the final pipeline redirection link
         if (targetAction === 'standings' && onViewLeague && league) {
-            onViewLeague(league._id, 'standings');
+            onViewLeague(league._id, 'standings', league.tournamentFormat);
         }
     };
 
@@ -147,7 +149,7 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey })
     }
 
     return (
-        <div className="space-y-6 relative">
+        <div className="space-y-6 relative text-left">
             {error && (
                 <div className="p-4 rounded-xl text-sm font-medium border bg-rose-500/10 border-rose-500/20 text-rose-400">
                     {error}
@@ -276,6 +278,10 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey })
                                             <span className="bg-slate-800/80 text-slate-300 px-2 py-0.5 rounded-md border border-slate-700">
                                                 Max STR: {league.maxStrengthLimit || 'Any'}
                                             </span>
+                                            {/* 🚀 NEW: Added an explicit format layout tracking label onto the card deck component layout */}
+                                            <span className="bg-slate-800/80 text-cyan-400 px-2 py-0.5 rounded-md border border-slate-700 font-extrabold">
+                                                {league.tournamentFormat === 'knockout' ? '🪓 Knockout' : league.tournamentFormat === 'group_knockout' ? '⭐ Pools + Cup' : '🏆 Classic'}
+                                            </span>
                                         </div>
                                     </div>
 
@@ -333,7 +339,7 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey })
                                             )}
                                             <button
                                                 onClick={() => handleViewStandingsClick(league, hasJoined)}
-                                                className={`${(hasJoined && league.status === 'active') ? 'flex-1' : 'w-full'} bg-slate-900 hover:bg-slate-800 text-white border border-slate-800 text-xs font-black uppercase tracking-wider py-3 rounded-xl transition-all active:scale-[0.99]`}
+                                                className={`${hasJoined && league.status === 'active' ? 'flex-1' : 'w-full'} bg-slate-900 hover:bg-slate-800 text-white border border-slate-800 text-xs font-black uppercase tracking-wider py-3 rounded-xl transition-all active:scale-[0.99]`}
                                             >
                                                 View Standings
                                             </button>
@@ -346,7 +352,7 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey })
                 </div>
             )}
 
-            {/* 🚀 RULES & INSTRUCTIONS SCROLL-MANDATORY OVERLAY MODAL */}
+            {/* RULES & INSTRUCTIONS SCROLL-MANDATORY OVERLAY MODAL */}
             {rulesModal.isOpen && rulesModal.league && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
                     <div className="w-full max-w-xl bg-[#121824] border border-slate-800 rounded-3xl shadow-2xl flex flex-col max-h-[85vh] animate-scale-up">
@@ -366,7 +372,7 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey })
                         {/* Scrollable Rules Engine Base Body */}
                         <div className="p-6 overflow-y-auto space-y-6 text-sm text-slate-300 custom-scrollbar flex-1">
                             
-                            {/* 📢 Custom Tournament Rules */}
+                            {/* Custom Tournament Rules */}
                             {rulesModal.league.rules ? (
                                 <div className="bg-cyan-500/5 border border-cyan-500/20 rounded-xl p-4 space-y-2">
                                     <h5 className="text-xs font-bold text-cyan-400 uppercase tracking-widest flex items-center gap-2">
@@ -398,7 +404,7 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey })
                                 <ul className="space-y-2 text-xs font-medium text-slate-400 list-none pl-0">
                                     <li className="flex items-start gap-2">
                                         <span className="text-cyan-400 mt-0.5">✔</span>
-                                        <span><strong className="text-slate-200">Team Strength Cap:</strong> Your active squad ratings must strictly stay within <span className="text-cyan-400 font-bold">Max STR: {rulesModal.league.maxStrengthLimit || 'Unlimited'}</span> limits.</span>
+                                        <span><strong className="text-slate-200">Team Strength Cap:</strong> Your active active squad ratings must strictly stay within <span className="text-cyan-400 font-bold">Max STR: {rulesModal.league.maxStrengthLimit || 'Unlimited'}</span> limits.</span>
                                     </li>
                                     <li className="flex items-start gap-2">
                                         <span className="text-cyan-400 mt-0.5">✔</span>
@@ -425,7 +431,7 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey })
                         {/* Sticky Bottom Actions Layout */}
                         <div className="p-4 bg-[#0b0f17] border-t border-slate-800 rounded-b-3xl flex justify-end">
                             <button
-                                onClick={executeRulesAcknowledge}
+                                onClick={rulesModal.targetAction === 'standings' ? executeRulesAcknowledge : () => setRulesModal({ isOpen: false, league: null, targetAction: null })}
                                 className="w-full sm:w-auto bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-black text-xs uppercase tracking-wider py-3.5 px-8 rounded-xl shadow-lg shadow-cyan-400/10 transition-all active:scale-[0.99]"
                             >
                                 {rulesModal.targetAction === 'standings' ? 'I Understand, View Standings ✓' : 'Close Briefing'}

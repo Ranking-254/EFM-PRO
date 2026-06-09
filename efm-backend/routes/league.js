@@ -112,8 +112,9 @@ router.get('/active', async (req, res) => {
 // ========================================================
 router.get('/all', async (req, res) => {
     try {
+        // 🚀 FIXED: Added tournamentFormat and groupStageCount to the selection string so MongoDB fetches them
         const leagues = await League.find({})
-            .select('name maxStrengthLimit capacity players status currentMatchday rounds rules createdAt');
+            .select('name maxStrengthLimit capacity players status currentMatchday rounds tournamentFormat groupStageCount rules createdAt');
         
         const leaguesWithMeta = leagues.map(league => ({
             _id: league._id,
@@ -124,6 +125,9 @@ router.get('/all', async (req, res) => {
             status: league.status,
             currentMatchday: league.currentMatchday || 1,
             rounds: league.rounds !== undefined ? league.rounds : 0, 
+            // 🚀 FIXED: Mapping the new fields safely into the final payload with fallbacks
+            tournamentFormat: league.tournamentFormat || 'classic',
+            groupStageCount: league.groupStageCount || 0,
             rules: league.rules || '', 
             createdAt: league.createdAt
         }));
@@ -137,6 +141,7 @@ router.get('/all', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
+
 
 // ========================================================
 // @desc    Get leagues a specific user is registered into
@@ -759,30 +764,278 @@ router.delete('/:id/remove-member/:userId', async (req, res) => {
     }
 });
 
+// backend/routes/leagues.js - Bottom of the file helper update
+
 const checkAndCompleteLeague = async (req, leagueId) => {
-    const mongoose = require('mongoose');
-    const objectIdLeagueId = typeof leagueId === 'string' ? new mongoose.Types.ObjectId(leagueId) : leagueId;
-    
-    const league = await League.findById(objectIdLeagueId);
-    if (!league || league.status !== 'active') return;
+    try {
+        const objectIdLeagueId = typeof leagueId === 'string' ? new mongoose.Types.ObjectId(leagueId) : leagueId;
+        const league = await League.findById(objectIdLeagueId);
+        
+        if (!league || league.status === 'completed') return;
 
-    const totalFixtures = await Fixture.countDocuments({ leagueId: objectIdLeagueId });
-    const confirmedFixtures = await Fixture.countDocuments({ leagueId: objectIdLeagueId, status: 'confirmed' });
+        const formatType = league.tournamentFormat || 'classic';
 
-    if (totalFixtures > 0 && confirmedFixtures === totalFixtures) {
+        // --- HANDLER A: BRACKET ELIMINATION AUTOMATION (KNOCKOUTS) ---
+        if (formatType === 'knockout') {
+            // 1. Fetch all fixtures currently generated for this bracket tournament
+            const totalFixtures = await Fixture.find({ leagueId: objectIdLeagueId });
+            
+            // 2. Locate the maximum matchday/round index currently stored in the database
+            const activeMatchday = league.currentMatchday || 1;
+            const currentRoundMatches = totalFixtures.filter(f => f.matchday === activeMatchday);
+            const confirmedMatchesInRound = currentRoundMatches.filter(f => f.status === 'confirmed');
+
+            // If the current round isn't fully played out yet, halt progression check
+            if (currentRoundMatches.length === 0 || confirmedMatchesInRound.length !== currentRoundMatches.length) {
+                return;
+            }
+
+            // 3. Check if the tournament is completely finished (The Grand Final just wrapped up)
+            if (currentRoundMatches.length === 1 && currentRoundMatches[0].roundName === "Finals") {
+                league.status = 'completed';
+                await league.save();
+                
+                const grandWinnerId = currentRoundMatches[0].playerAScore > currentRoundMatches[0].playerBScore 
+                    ? currentRoundMatches[0].playerA 
+                    : currentRoundMatches[0].playerB;
+
+                await pushAndEmitNotification(req, league.players, {
+                    _id: new mongoose.Types.ObjectId().toString(),
+                    message: `🏆 GRAND FINALE CONCLUDED! The tournament "${league.name}" is officially complete. Congratulations to our Grand Champion! Check the final bracket layouts now.`,
+                    type: "league_assignment",
+                    isRead: false,
+                    createdAt: new Date()
+                });
+                return;
+            }
+
+            // backend/routes/leagues.js - Bottom of the file helper update
+
+const checkAndCompleteLeague = async (req, leagueId) => {
+    try {
+        const objectIdLeagueId = typeof leagueId === 'string' ? new mongoose.Types.ObjectId(leagueId) : leagueId;
+        const league = await League.findById(objectIdLeagueId);
+        
+        if (!league || league.status === 'completed') return;
+
+        const formatType = league.tournamentFormat || 'classic';
+
+        // --- HANDLER A: BRACKET ELIMINATION AUTOMATION (KNOCKOUTS) ---
+        if (formatType === 'knockout') {
+            // 1. Fetch all fixtures currently generated for this bracket tournament
+            const totalFixtures = await Fixture.find({ leagueId: objectIdLeagueId });
+            
+            // 2. Locate the maximum matchday/round index currently stored in the database
+            const activeMatchday = league.currentMatchday || 1;
+            const currentRoundMatches = totalFixtures.filter(f => f.matchday === activeMatchday);
+            const confirmedMatchesInRound = currentRoundMatches.filter(f => f.status === 'confirmed');
+
+            // If the current round isn't fully played out yet, halt progression check
+            if (currentRoundMatches.length === 0 || confirmedMatchesInRound.length !== currentRoundMatches.length) {
+                return;
+            }
+
+            // 3. Check if the tournament is completely finished (The Grand Final just wrapped up)
+            if (currentRoundMatches.length === 1 && currentRoundMatches[0].roundName === "Finals") {
+                league.status = 'completed';
+                await league.save();
+                
+                const grandWinnerId = currentRoundMatches[0].playerAScore > currentRoundMatches[0].playerBScore 
+                    ? currentRoundMatches[0].playerA 
+                    : currentRoundMatches[0].playerB;
+
+                await pushAndEmitNotification(req, league.players, {
+                    _id: new mongoose.Types.ObjectId().toString(),
+                    message: `🏆 GRAND FINALE CONCLUDED! The tournament "${league.name}" is officially complete. Congratulations to our Grand Champion! Check the final bracket layouts now.`,
+                    type: "league_assignment",
+                    isRead: false,
+                    createdAt: new Date()
+                });
+                return;
+            }
+
+            // 4. ADVANCEMENT GENERATOR: If the current round is done, compile the next bracket tier!
+            let advancedWinners = [];
+            currentRoundMatches.forEach(match => {
+                const winnerId = match.playerAScore > match.playerBScore ? match.playerA : match.playerB;
+                advancedWinners.push(winnerId);
+            });
+
+            const nextMatchdayNumber = activeMatchday + 1;
+            const nextRoundMatchesCount = advancedWinners.length / 2;
+            let nextRoundName = nextRoundMatchesCount === 1 ? "Finals" : nextRoundMatchesCount === 2 ? "Semifinals" : "Quarterfinals";
+            
+            let nextRoundFixtures = [];
+
+            // Group the advancing winners side-by-side into fresh pairings
+            for (let i = 0; i < nextRoundMatchesCount; i++) {
+                nextRoundFixtures.push({
+                    leagueId: objectIdLeagueId,
+                    matchday: nextMatchdayNumber,
+                    roundName: nextRoundName,
+                    label: `R${nextMatchdayNumber}_MATCH_${i + 1}`,
+                    playerA: advancedWinners[i * 2],
+                    playerB: advancedWinners[i * 2 + 1],
+                    playerAScore: null,
+                    playerBScore: null,
+                    playerASubmittedScore: null,
+                    playerBSubmittedScore: null,
+                    status: 'pending'
+                });
+            }
+
+            // Persist the upcoming round tier to MongoDB rows
+            await Fixture.insertMany(nextRoundFixtures);
+
+            // Advance the league's calendar pointer to unlock the next round on user dashboards
+            league.currentMatchday = nextMatchdayNumber;
+            await league.save();
+
+            // Notify everyone remaining that the next round has officially dropped
+            await pushAndEmitNotification(req, league.players, {
+                _id: new mongoose.Types.ObjectId().toString(),
+                message: `🪓 NEXT ROUND READY: Round ${nextMatchdayNumber} (${nextRoundName}) inside "${league.name}" has loaded! Head to your dashboard to run your match pairings.`,
+                type: "general",
+                isRead: false,
+                createdAt: new Date()
+            });
+
+            return;
+        }
+
+        // --- HANDLER B: CLASSIC TOURNAMENTS LEG STANDARDS ---
+        if (formatType === 'classic') {
+            const totalFixturesCount = await Fixture.countDocuments({ leagueId: objectIdLeagueId });
+            const confirmedFixturesCount = await Fixture.countDocuments({ leagueId: objectIdLeagueId, status: 'confirmed' });
+
+            if (totalFixturesCount > 0 && confirmedFixturesCount === totalFixturesCount) {
+                league.status = 'completed';
+                await league.save();
+
+                await pushAndEmitNotification(req, league.players, {
+                    _id: new mongoose.Types.ObjectId().toString(),
+                    message: `🏆 Season Concluded! All matchdays inside "${league.name}" are finished. Check the final Standings board to see your official rank positioning!`,
+                    type: "league_assignment",
+                    isRead: false,
+                    createdAt: new Date()
+                });
+            }
+        }
+
+    } catch (error) {
+        console.error("Critical failure executing automated progression pipeline loops:", error);
+    }
+};
+
+            // 4. ADVANCEMENT GENERATOR: If the current round is done, compile the next bracket tier!
+            let advancedWinners = [];
+            currentRoundMatches.forEach(match => {
+                const winnerId = match.playerAScore > match.playerBScore ? match.playerA : match.playerB;
+                advancedWinners.push(winnerId);
+            });
+
+            const nextMatchdayNumber = activeMatchday + 1;
+            const nextRoundMatchesCount = advancedWinners.length / 2;
+            let nextRoundName = nextRoundMatchesCount === 1 ? "Finals" : nextRoundMatchesCount === 2 ? "Semifinals" : "Quarterfinals";
+            
+            let nextRoundFixtures = [];
+
+            // Group the advancing winners side-by-side into fresh pairings
+            for (let i = 0; i < nextRoundMatchesCount; i++) {
+                nextRoundFixtures.push({
+                    leagueId: objectIdLeagueId,
+                    matchday: nextMatchdayNumber,
+                    roundName: nextRoundName,
+                    label: `R${nextMatchdayNumber}_MATCH_${i + 1}`,
+                    playerA: advancedWinners[i * 2],
+                    playerB: advancedWinners[i * 2 + 1],
+                    playerAScore: null,
+                    playerBScore: null,
+                    playerASubmittedScore: null,
+                    playerBSubmittedScore: null,
+                    status: 'pending'
+                });
+            }
+
+            // Persist the upcoming round tier to MongoDB rows
+            await Fixture.insertMany(nextRoundFixtures);
+
+            // Advance the league's calendar pointer to unlock the next round on user dashboards
+            league.currentMatchday = nextMatchdayNumber;
+            await league.save();
+
+            // Notify everyone remaining that the next round has officially dropped
+            await pushAndEmitNotification(req, league.players, {
+                _id: new mongoose.Types.ObjectId().toString(),
+                message: `🪓 NEXT ROUND READY: Round ${nextMatchdayNumber} (${nextRoundName}) inside "${league.name}" has loaded! Head to your dashboard to run your match pairings.`,
+                type: "general",
+                isRead: false,
+                createdAt: new Date()
+            });
+
+            return;
+        }
+
+        // --- HANDLER B: CLASSIC TOURNAMENTS LEG STANDARDS ---
+        if (formatType === 'classic') {
+            const totalFixturesCount = await Fixture.countDocuments({ leagueId: objectIdLeagueId });
+            const confirmedFixturesCount = await Fixture.countDocuments({ leagueId: objectIdLeagueId, status: 'confirmed' });
+
+            if (totalFixturesCount > 0 && confirmedFixturesCount === totalFixturesCount) {
+                league.status = 'completed';
+                await league.save();
+
+                await pushAndEmitNotification(req, league.players, {
+                    _id: new mongoose.Types.ObjectId().toString(),
+                    message: `🏆 Season Concluded! All matchdays inside "${league.name}" are finished. Check the final Standings board to see your official rank positioning!`,
+                    type: "league_assignment",
+                    isRead: false,
+                    createdAt: new Date()
+                });
+            }
+        }
+
+    } catch (error) {
+        console.error("Critical failure executing automated progression pipeline loops:", error);
+    }
+};
+// Subsidiary structural handler helper managing nested post-group bracket escalations
+const handleKnockoutProgressionCheck = async (req, league, totalFixtures) => {
+    const activeMatchday = league.currentMatchday || 1;
+    const currentMatches = totalFixtures.filter(f => f.matchday === activeMatchday);
+    const confirmedMatches = currentMatches.filter(f => f.status === 'confirmed');
+
+    if (currentMatches.length === 0 || confirmedMatches.length !== currentMatches.length) return;
+
+    // Final check loop if the bracket tournament has reached its final match row
+    if (currentMatches.length === 1 && currentMatches[0].roundName === "Finals") {
         league.status = 'completed';
         await league.save();
-
-        const endOfSeasonNotification = {
-            _id: new mongoose.Types.ObjectId().toString(),
-            message: `🏆 Season Concluded! All matchdays inside "${league.name}" are finished. Check the final Standings board to see your official rank positioning!`,
-            type: "league_assignment",
-            isRead: false,
-            createdAt: new Date()
-        };
-
-        await pushAndEmitNotification(req, league.players, endOfSeasonNotification);
+        return;
     }
+
+    let advancedWinners = currentMatches.map(m => m.playerAScore > m.playerBScore ? m.playerA : m.playerB);
+    const nextMatchday = activeMatchday + 1;
+    const nextMatchesCount = advancedWinners.length / 2;
+    const roundName = nextMatchesCount === 1 ? "Finals" : "Semifinals";
+
+    let nextFixtures = [];
+    for (let i = 0; i < nextMatchesCount; i++) {
+        nextFixtures.push({
+            leagueId: league._id,
+            matchday: nextMatchday,
+            stageType: 'knockout_stage',
+            roundName,
+            label: `K_R${nextMatchday}_MATCH_${i + 1}`,
+            playerA: advancedWinners[i * 2],
+            playerB: advancedWinners[i * 2 + 1],
+            status: 'pending'
+        });
+    }
+
+    await Fixture.insertMany(nextFixtures);
+    league.currentMatchday = nextMatchday;
+    await league.save();
 };
 
 module.exports = router;

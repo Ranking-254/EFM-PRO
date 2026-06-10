@@ -1,475 +1,1023 @@
-// src/components/AdminLeagueManager.jsx
-import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+// routes/leagues.js
+const express = require('express');
+const router = express.Router();
+const League = require('../models/League');
+const User = require('../models/user');
+const Fixture = require('../models/Fixture'); 
+// 🚀 FIXED: Swapped out single function import for our Advanced Triple-Format Engine Map Objects
+const { 
+    generateClassicLeague, 
+    generateKnockoutBracket, 
+    generateGroupAndKnockout 
+} = require('../utils/scheduler');
 
-const API_BASE_URL = window.location.hostname === 'localhost' 
-    ? 'http://localhost:5000/api/v1' 
-    : 'https://efm-pro.onrender.com/api/v1';
+const crypto = require('crypto');
+const mongoose = require('mongoose'); 
 
-const AdminLeagueManager = ({ leagues, onRefresh, onViewLeague }) => {
-    const [showCreateForm, setShowCreateForm] = useState(false);
-    const [editingLeague, setEditingLeague] = useState(null);
-    const [formData, setFormData] = useState({
-        name: '',
-        maxStrengthLimit: 3100,
-        capacity: 10,
-        rounds: 0,
-        status: 'recruiting',
-        tournamentFormat: 'classic',    // 🚀 NEW: Tracks tournament format state
-        groupStageCount: 4,             // 🚀 NEW: Tracks sub-group pool configuration
-        rules: '',       
-    });
-    const [submitting, setSubmitting] = useState(false);
-    const [error, setError] = useState('');
-    const [success, setSuccess] = useState('');
-    const [membersMap, setMembersMap] = useState({});
+// Utility Helper: Safely updates user document arrays and triggers immediate socket push notifications
+const pushAndEmitNotification = async (req, userIds, notificationPayload) => {
+    try {
+        const io = req.app.get('io');
+        const idsArray = Array.isArray(userIds) ? userIds : [userIds];
+        const stringIds = idsArray.map(id => id.toString());
 
-    useEffect(() => {
-        leagues.forEach(league => {
-            if (league.players && league.players.length > 0) {
-                fetchMembers(league._id, league.players);
-            }
-        });
-    }, [leagues]);
+        // 1. Persist securely to MongoDB documents
+        await User.updateMany(
+            { _id: { $in: stringIds } },
+            { $push: { notifications: notificationPayload } }
+        );
 
-    const fetchMembers = async (leagueId, playerIds) => {
-        try {
-            const promises = playerIds.map(id =>
-                axios.get(`${API_BASE_URL}/auth/profile/${id}`)
-            );
-            const results = await Promise.all(promises);
-            const members = {};
-            results.forEach((res, idx) => {
-                if (res.data.success) {
-                    members[playerIds[idx]] = res.data.data;
-                }
+        // 2. Real-Time Socket Push Dispatch
+        if (io) {
+            stringIds.forEach(id => {
+                // Fetch the updated notifications array from the database to ensure state sync consistency
+                User.findById(id).select('notifications').then(user => {
+                    if (user) {
+                        io.to(id).emit('notifications_updated', user.notifications);
+                    }
+                }).catch(err => console.error(`Socket broadcast pipeline failure for user ${id}:`, err));
             });
-            setMembersMap(prev => ({ ...prev, [leagueId]: members }));
-        } catch (err) {
-            console.error('Failed to fetch members:', err);
         }
-    };
+    } catch (error) {
+        console.error("Failed executing pushAndEmitNotification pipeline helper:", error);
+    }
+};
 
-    const resetForm = () => {
-        setFormData({ 
-            name: '', 
-            maxStrengthLimit: 3100, 
-            capacity: 10, 
-            rounds: 0, 
-            status: 'recruiting',
-            tournamentFormat: 'classic', // 🚀 NEW: Clean slate resetting link
-            groupStageCount: 4,          // 🚀 NEW: Clean slate resetting link
-            rules: '',       
-        });
-        setEditingLeague(null);
-        setShowCreateForm(false);
-        setError('');
-        setSuccess('');
-    };
-
-    const handleEdit = (league) => {
-        setFormData({
+// ========================================================
+// @desc    Get all recruiting leagues with capacity info
+// @route   GET /api/v1/leagues/recruiting
+// ========================================================
+router.get('/recruiting', async (req, res) => {
+    try {
+        const leagues = await League.find({ status: 'recruiting' })
+            .select('name maxStrengthLimit capacity players rounds rules createdAt');
+        
+        const leaguesWithMeta = leagues.map(league => ({
+            _id: league._id,
             name: league.name,
             maxStrengthLimit: league.maxStrengthLimit,
             capacity: league.capacity,
-            rounds: league.rounds || 0,
+            slotsFilled: league.players.length,
             status: league.status,
-            tournamentFormat: league.tournamentFormat || 'classic', // 🚀 NEW: Hydrate format tracking
-            groupStageCount: league.groupStageCount || 4,          // 🚀 NEW: Hydrate group configuration
-            rules: league.rules || '',          
+            rounds: league.rounds !== undefined ? league.rounds : 0, 
+            rules: league.rules || '', 
+            createdAt: league.createdAt
+        }));
+
+        res.status(200).json({
+            success: true,
+            count: leaguesWithMeta.length,
+            data: leaguesWithMeta
         });
-        setEditingLeague(league);
-        setShowCreateForm(true);
-        setError('');
-    };
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        setError('');
-        setSubmitting(true);
+// ========================================================
+// @desc    Get all active leagues with progression stats
+// @route   GET /api/v1/leagues/active
+// ========================================================
+router.get('/active', async (req, res) => {
+    try {
+        const leagues = await League.find({ status: 'active' })
+            .select('name maxStrengthLimit capacity players currentMatchday rounds rules createdAt');
+        
+        const leaguesWithMeta = leagues.map(league => ({
+            _id: league._id,
+            name: league.name,
+            maxStrengthLimit: league.maxStrengthLimit,
+            capacity: league.capacity,
+            slotsFilled: league.players.length,
+            status: league.status,
+            currentMatchday: league.currentMatchday,
+            rounds: league.rounds !== undefined ? league.rounds : 0, 
+            rules: league.rules || '', 
+            createdAt: league.createdAt
+        }));
 
-        try {
-            if (editingLeague) {
-                const res = await axios.put(
-                    `${API_BASE_URL}/leagues/${editingLeague._id}`,
-                    { 
-                        name: formData.name, 
-                        maxStrengthLimit: formData.maxStrengthLimit, 
-                        capacity: formData.capacity, 
-                        rounds: formData.rounds,
-                        status: formData.status,
-                        tournamentFormat: formData.tournamentFormat, // 🚀 TRANSMITTING NEW PROPERTIES
-                        groupStageCount: formData.tournamentFormat === 'group_knockout' ? formData.groupStageCount : 0, // 🚀 TRANSMITTING
-                        rules: formData.rules,         
-                    }
-                );
-                if (res.data.success) {
-                    setSuccess('League updated successfully!');
-                    resetForm();
-                    onRefresh();
-                }
-            } else {
-                const res = await axios.post(`${API_BASE_URL}/leagues`, {
-                    name: formData.name,
-                    maxStrengthLimit: formData.maxStrengthLimit,
-                    capacity: formData.capacity,
-                    rounds: formData.rounds,
-                    status: formData.status,
-                    tournamentFormat: formData.tournamentFormat, // 🚀 TRANSMITTING NEW PROPERTIES
-                    groupStageCount: formData.tournamentFormat === 'group_knockout' ? formData.groupStageCount : 0, // 🚀 TRANSMITTING
-                    players: [],
-                    rules: formData.rules,         
+        res.status(200).json({
+            success: true,
+            count: leaguesWithMeta.length,
+            data: leaguesWithMeta
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ========================================================
+// @desc    Get all leagues in system (Master Dashboard Ledger)
+// @route   GET /api/v1/leagues/all
+// ========================================================
+router.get('/all', async (req, res) => {
+    try {
+        // 🚀 FIXED: Added tournamentFormat and groupStageCount to the selection string so MongoDB fetches them
+        const leagues = await League.find({})
+            .select('name maxStrengthLimit capacity players status currentMatchday rounds tournamentFormat groupStageCount rules createdAt');
+        
+        const leaguesWithMeta = leagues.map(league => ({
+            _id: league._id,
+            name: league.name,
+            maxStrengthLimit: league.maxStrengthLimit,
+            capacity: league.capacity,
+            slotsFilled: league.players.length,
+            status: league.status,
+            currentMatchday: league.currentMatchday || 1,
+            rounds: league.rounds !== undefined ? league.rounds : 0, 
+            // 🚀 FIXED: Mapping the new fields safely into the final payload with fallbacks
+            tournamentFormat: league.tournamentFormat || 'classic',
+            groupStageCount: league.groupStageCount || 0,
+            rules: league.rules || '', 
+            createdAt: league.createdAt
+        }));
+
+        res.status(200).json({
+            success: true,
+            count: leaguesWithMeta.length,
+            data: leaguesWithMeta
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+
+// ========================================================
+// @desc    Get leagues a specific user is registered into
+// @route   GET /api/v1/leagues/my-leagues/:userId
+// ========================================================
+router.get('/my-leagues/:userId', async (req, res) => {
+    try {
+        const userLeagues = await League.find({ players: req.params.userId })
+            .select('name maxStrengthLimit capacity players status currentMatchday rounds rules createdAt');
+
+        const leaguesWithMeta = userLeagues.map(league => ({
+            _id: league._id,
+            name: league.name,
+            maxStrengthLimit: league.maxStrengthLimit,
+            capacity: league.capacity,
+            slotsFilled: league.players.length,
+            status: league.status,
+            currentMatchday: league.currentMatchday || 1,
+            rounds: league.rounds !== undefined ? league.rounds : 0, 
+            rules: league.rules || '', 
+            createdAt: league.createdAt
+        }));
+
+        res.status(200).json({
+            success: true,
+            count: leaguesWithMeta.length,
+            data: leaguesWithMeta
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+router.get('/user/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const userLeagues = await League.find({ 
+            players: userId 
+        }).select('name status capacity slotsFilled maxStrengthLimit currentMatchday rounds rules');
+
+        res.status(200).json({
+            success: true,
+            data: userLeagues
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ========================================================
+// @desc    Initialize a brand new league
+// @route   POST /api/v1/leagues
+// ========================================================
+router.post('/', async (req, res) => {
+    try {
+        const league = await League.create(req.body);
+
+        const io = req.app.get('io');
+        if (io) {
+            io.emit('global_notification', {
+                _id: new mongoose.Types.ObjectId().toString(), 
+                message: `📢 New League Formed: "${league.name}" has just opened registrations! Max STR: ${league.maxStrengthLimit}. Secure your slot now!`,
+                type: 'new_league',
+                isRead: false,                      
+                createdAt: new Date()
+            });
+        }
+
+        res.status(201).json({
+            success: true,
+            message: `League '${league.name}' initialized successfully!`,
+            data: league
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ========================================================
+// @desc    Join an open recruiting league group slot
+// @route   POST /api/v1/leagues/:id/join
+// ========================================================
+router.post('/:id/join', async (req, res) => {
+    try {
+        const league = await League.findById(req.params.id);
+        const { userId } = req.body;
+
+        if (!league) return res.status(404).json({ success: false, error: "League not found." });
+        if (league.status !== 'recruiting') return res.status(400).json({ success: false, error: "Registration locked." });
+        if (league.players.includes(userId)) return res.status(400).json({ success: false, error: "Already joined." });
+
+        const player = await User.findById(userId);
+        if (!player) return res.status(404).json({ success: false, error: "Player profile not found." });
+        if (player.teamStrength > league.maxStrengthLimit) {
+            return res.status(400).json({ success: false, error: "Team strength exceeds limit." });
+        }
+        if (league.players.length >= league.capacity) return res.status(400).json({ success: false, error: "League full!" });
+
+        league.players.push(userId);
+
+        let systemMessage = `Successfully joined ${league.name}!`;
+        let triggerScheduleGeneration = false;
+
+        const joinAlertPayload = {
+            _id: new mongoose.Types.ObjectId().toString(),
+            message: `🔔 Slot reservation logged! You have successfully registered into "${league.name}". You'll be notified automatically the moment this group fills up and matches begin!`,
+            type: "general",
+            isRead: false,
+            createdAt: new Date()
+        };
+        await pushAndEmitNotification(req, userId, joinAlertPayload);
+
+        if (league.players.length === league.capacity) {
+            league.status = 'active'; 
+            triggerScheduleGeneration = true;
+            systemMessage = `League is officially full! Status flipped to ACTIVE, and full season fixtures have been generated automatically.`;
+        }
+
+        await league.save();
+
+        if (triggerScheduleGeneration) {
+            let schedulePlan = [];
+            const formatType = league.tournamentFormat || 'classic';
+
+            if (formatType === 'knockout') {
+                schedulePlan = generateKnockoutBracket(league.players);
+            } else if (formatType === 'group_knockout') {
+                schedulePlan = generateGroupAndKnockout(league.players, { 
+                    groupsCount: league.groupStageCount || 4 
                 });
-                if (res.data.success) {
-                    setSuccess('League created successfully!');
-                    resetForm();
-                    onRefresh();
+            } else {
+                schedulePlan = generateClassicLeague(league.players, league.rounds || 1);
+            }
+
+            const finalizedFixtures = schedulePlan.map(match => ({
+                leagueId: league._id,
+                ...match
+            }));
+
+            await Fixture.insertMany(finalizedFixtures);
+
+            const leagueLaunchNotification = {
+                _id: new mongoose.Types.ObjectId().toString(),
+                message: `📅 Fixtures generated! "${league.name}" is officially full and ACTIVE. Head to the Fixtures and scores page to run your matches!`,
+                type: "league_assignment",
+                isRead: false,
+                createdAt: new Date()
+            };
+
+            await pushAndEmitNotification(req, league.players, leagueLaunchNotification);
+        }
+
+        res.status(200).json({
+            success: true,
+            message: systemMessage,
+            status: league.status,
+            currentPlayersCount: league.players.length,
+            capacity: league.capacity
+        });
+
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+
+router.get('/:id/fixtures', async (req, res) => {
+    try {
+        const fixtures = await Fixture.find({ leagueId: req.params.id })
+            .populate('playerA', 'username whatsappNumber efootballId')
+            .populate('playerB', 'username whatsappNumber efootballId')
+            .sort('matchday');
+
+        res.status(200).json({
+            success: true,
+            count: fixtures.length,
+            data: fixtures
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ========================================================
+// @desc    Process match score results submission
+// @route   POST /api/v1/leagues/fixtures/:fixtureId/submit
+// ========================================================
+router.post('/fixtures/:fixtureId/submit', async (req, res) => {
+    try {
+        const { userId, yourScore, opponentScore } = req.body;
+        const fixture = await Fixture.findById(req.params.fixtureId);
+
+        if (!fixture) {
+            return res.status(404).json({ success: false, error: "Fixture not found." });
+        }
+
+        if (fixture.status === 'confirmed') {
+            return res.status(400).json({ success: false, error: "This match result has already been finalized." });
+        }
+
+        if (fixture.matchday > 1) {
+            const outstandingPriorFixtures = await Fixture.countDocuments({
+                leagueId: fixture.leagueId,
+                matchday: { $lt: fixture.matchday }, 
+                status: { $ne: 'confirmed' }        
+            });
+
+            if (outstandingPriorFixtures > 0) {
+                return res.status(400).json({ 
+                    success: false, 
+                    error: `Progression Blocked: Round ${fixture.matchday} is locked. All tournament groups must complete and confirm outstanding Matchday ${fixture.matchday - 1} results before anyone can advance.` 
+                });
+            }
+        }
+
+        const isPlayerA = fixture.playerA.toString() === userId;
+        const isPlayerB = fixture.playerB.toString() === userId;
+
+        if (!isPlayerA && !isPlayerB) {
+            return res.status(403).json({ success: false, error: "You are not a participant in this match." });
+        }
+
+        const submittingUser = await User.findById(userId);
+        const opponentId = isPlayerA ? fixture.playerB : fixture.playerA;
+
+        if (isPlayerA) {
+            fixture.playerASubmittedScore = yourScore;
+            fixture.playerBScore = opponentScore;
+        } else if (isPlayerB) {
+            fixture.playerBSubmittedScore = yourScore;
+            fixture.playerAScore = opponentScore;
+        }
+
+        const targetLeague = await League.findById(fixture.leagueId);
+        let matchNotification = null;
+        let submitterNotification = null;
+        let progressionAlert = null;
+        let triggerProgressionPush = false;
+
+        if (fixture.playerASubmittedScore !== null && fixture.playerBSubmittedScore !== null) {
+            const doesPlayerAAlign = fixture.playerASubmittedScore === fixture.playerAScore;
+            const doesPlayerBAlign = fixture.playerBSubmittedScore === fixture.playerBScore;
+
+            if (doesPlayerAAlign && doesPlayerBAlign) {
+                fixture.status = 'confirmed';
+                
+                matchNotification = {
+                    _id: new mongoose.Types.ObjectId().toString(),
+                    message: `✅ Match result finalized! Your Matchday ${fixture.matchday} fixture in "${targetLeague?.name || 'League Group'}" against @${submittingUser?.username || 'Opponent'} [${opponentScore} - ${yourScore}] has been confirmed and applied to standings.`,
+                    type: "general",
+                    isRead: false,
+                    createdAt: new Date()
+                };
+
+                submitterNotification = {
+                    _id: new mongoose.Types.ObjectId().toString(),
+                    message: `✅ Matchday ${fixture.matchday} score confirmed! Your result in "${targetLeague?.name || 'League Group'}" [${yourScore} - ${opponentScore}] has been verified and applied to standings.`,
+                    type: "general",
+                    isRead: false,
+                    createdAt: new Date()
+                };
+
+                const nextMatchdayNumber = fixture.matchday + 1;
+                progressionAlert = {
+                    _id: new mongoose.Types.ObjectId().toString(),
+                    message: `📅 Matchday ${fixture.matchday} complete! Look ahead to Matchday ${nextMatchdayNumber} in your hub to scout your next opponent.`,
+                    type: "general",
+                    isRead: false,
+                    createdAt: new Date()
+                };
+
+                triggerProgressionPush = true;
+
+            } else {
+                fixture.status = 'disputed';
+                
+                matchNotification = {
+                    _id: new mongoose.Types.ObjectId().toString(),
+                    message: `⚠️ Score conflict! The score reported for Matchday ${fixture.matchday} in "${targetLeague?.name || 'League Group'}" does not align with your submission. Match flagged for dispute resolution.`,
+                    type: "admin_override",
+                    isRead: false,
+                    createdAt: new Date()
+                };
+
+                submitterNotification = {
+                    _id: new mongoose.Types.ObjectId().toString(),
+                    message: `⚠️ Score conflict! Your reported score for Matchday ${fixture.matchday} in "${targetLeague?.name || 'League Group'}" does not match your opponent's submission. Flagged for dispute.`,
+                    type: "admin_override",
+                    isRead: false,
+                    createdAt: new Date()
+                };
+            }
+        } else {
+            fixture.status = 'awaiting_confirmation';
+            
+            matchNotification = {
+                _id: new mongoose.Types.ObjectId().toString(),
+                message: `⚽ Score reported! @${submittingUser?.username || 'Opponent'} submitted a result of [${opponentScore} - ${yourScore}] for Matchday ${fixture.matchday} in "${targetLeague?.name || 'League Group'}". Head over to confirm or challenge it!`,
+                type: "score_report",
+                isRead: false,
+                createdAt: new Date()
+            };
+
+            submitterNotification = {
+                _id: new mongoose.Types.ObjectId().toString(),
+                message: `⏳ Score submission logged! Your reported result of [${yourScore} - ${opponentScore}] for Matchday ${fixture.matchday} is currently pending opponent confirmation.`,
+                type: "general",
+                isRead: false,
+                createdAt: new Date()
+            };
+        }
+
+        await fixture.save();
+
+        if (matchNotification && opponentId) {
+            await pushAndEmitNotification(req, opponentId, matchNotification);
+        }
+
+        if (submitterNotification && userId) {
+            await pushAndEmitNotification(req, userId, submitterNotification);
+        }
+
+        if (triggerProgressionPush) {
+            await pushAndEmitNotification(req, [fixture.playerA, fixture.playerB], progressionAlert);
+        }
+
+        await checkAndCompleteLeague(req, fixture.leagueId);
+
+        res.status(200).json({
+            success: true,
+            message: `Score processed. Current match status: ${fixture.status.toUpperCase()}`,
+            data: fixture
+        });
+
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ========================================================
+// @desc    Get individual league standings table ledger
+// @route   GET /api/v1/leagues/:id/standings
+// ========================================================
+router.get('/:id/standings', async (req, res) => {
+    try {
+        const league = await League.findById(req.params.id).populate('players', 'username');
+        if (!league) {
+            return res.status(404).json({ success: false, error: "League not found." });
+        }
+
+        const confirmedFixtures = await Fixture.find({ 
+            leagueId: req.params.id, 
+            status: 'confirmed' 
+        });
+
+        const totalFixtures = await Fixture.find({ leagueId: req.params.id });
+
+        const standingsMap = {};
+        league.players.forEach(player => {
+            const playerIdStr = player._id.toString();
+
+            const trackingFixture = totalFixtures.find(f => 
+                f.playerA?.toString() === playerIdStr || f.playerB?.toString() === playerIdStr
+            );
+
+            standingsMap[playerIdStr] = {
+                playerId: player._id,
+                username: player.username,
+                groupLabel: trackingFixture ? trackingFixture.groupLabel : undefined,
+                played: 0,
+                won: 0,
+                drawn: 0,
+                lost: 0,
+                goalsFor: 0,
+                goalsAgainst: 0,
+                goalDifference: 0,
+                points: 0
+            };
+        });
+
+        confirmedFixtures.forEach(match => {
+            const idA = match.playerA.toString();
+            const idB = match.playerB.toString();
+            const scoreA = match.playerAScore;
+            const scoreB = match.playerBScore;
+
+            if (standingsMap[idA] && standingsMap[idB]) {
+                standingsMap[idA].played += 1;
+                standingsMap[idB].played += 1;
+
+                standingsMap[idA].goalsFor += scoreA;
+                standingsMap[idA].goalsAgainst += scoreB;
+                standingsMap[idB].goalsFor += scoreB;
+                standingsMap[idB].goalsAgainst += scoreA;
+
+                if (scoreA > scoreB) {
+                    standingsMap[idA].won += 1;
+                    standingsMap[idA].points += 3;
+                    standingsMap[idB].lost += 1;
+                } else if (scoreB > scoreA) {
+                    standingsMap[idB].won += 1;
+                    standingsMap[idB].points += 3;
+                    standingsMap[idA].lost += 1;
+                } else {
+                    standingsMap[idA].drawn += 1;
+                    standingsMap[idA].points += 1;
+                    standingsMap[idB].drawn += 1;
+                    standingsMap[idB].points += 1;
                 }
             }
-        } catch (err) {
-            const serverErr = err.response?.data?.error || 'Operation failed. Please try again.';
-            setError(serverErr);
-        } finally {
-            setSubmitting(false);
+        });
+
+        const standingsArray = Object.values(standingsMap).map((row) => {
+            row.goalDifference = row.goalsFor - row.goalsAgainst;
+            return row;
+        });
+
+        standingsArray.sort((a, b) => {
+            if (b.points !== a.points) return b.points - a.points;
+            if (b.goalDifference !== a.goalDifference) return b.goalDifference - a.goalDifference;
+            return b.goalsFor - a.goalsFor;
+        });
+
+        res.status(200).json({
+            success: true,
+            leagueName: league.name,
+            tournamentFormat: league.tournamentFormat || 'classic',
+            table: standingsArray
+        });
+
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+
+// ========================================================
+// @desc    Admin dispute resolution and score override
+// @route   PATCH /api/v1/leagues/fixtures/:fixtureId/resolve
+// ========================================================
+router.patch('/fixtures/:fixtureId/resolve', async (req, res) => {
+    try {
+        const { playerAScore, playerBScore } = req.body;
+        
+        if (playerAScore === undefined || playerBScore === undefined || isNaN(playerAScore) || isNaN(playerBScore)) {
+            return res.status(400).json({ 
+                success: false, 
+                error: "Please provide valid numeric scores for both players." 
+            });
         }
-    };
 
-    const handleDelete = async (leagueId, leagueName) => {
-        if (!window.confirm(`Are you sure you want to delete "${leagueName}"? This cannot be undone.`)) return;
+        const fixture = await Fixture.findById(req.params.fixtureId);
+        if (!fixture) {
+            return res.status(404).json({ success: false, error: "Fixture not found." });
+        }
 
-        setSubmitting(true);
-        try {
-            const res = await axios.delete(`${API_BASE_URL}/leagues/${leagueId}`);
-            if (res.data.success) {
-                setSuccess(res.data.message);
-                onRefresh();
+        fixture.playerAScore = playerAScore;
+        fixture.fixtureId = req.params.fixtureId; 
+        fixture.playerBScore = playerBScore;
+        fixture.playerASubmittedScore = playerAScore;
+        fixture.playerBSubmittedScore = playerBScore;
+        fixture.status = 'confirmed'; 
+
+        await fixture.save();
+
+        const targetLeague = await League.findById(fixture.leagueId);
+        const disputeResolvedNotification = {
+            _id: new mongoose.Types.ObjectId().toString(),
+            message: `⚖️ Admin Intervention: The dispute on your Matchday ${fixture.matchday} fixture in "${targetLeague?.name || 'Tournament Group'}" has been settled and locked by organizers.`,
+            type: "admin_override",
+            isRead: false,
+            createdAt: new Date()
+        };
+
+        await pushAndEmitNotification(req, [fixture.playerA, fixture.playerB], disputeResolvedNotification);
+
+        // Run season completion checks
+        await checkAndCompleteLeague(req, fixture.leagueId);
+
+        res.status(200).json({
+            success: true,
+            message: `Admin Override Successful. Fixture resolved and standings tables re-compiled smoothly.`,
+            data: fixture
+        });
+
+    } catch (error) {
+        console.error("Dispute override script collapse:", error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ========================================================
+// @desc    Update league configuration parameters
+// @route   PUT /api/v1/leagues/:id
+// ========================================================
+router.put('/:id', async (req, res) => {
+    try {
+        const { name, maxStrengthLimit, capacity, status, rounds, rules, tournamentFormat, groupStageCount } = req.body;
+        const league = await League.findById(req.params.id);
+
+        if (!league) {
+            return res.status(404).json({ success: false, error: "League not found." });
+        }
+
+        if (name !== undefined) league.name = name;
+        if (maxStrengthLimit !== undefined) league.maxStrengthLimit = maxStrengthLimit;
+        if (capacity !== undefined) {
+            if (capacity < 2) {
+                return res.status(400).json({ success: false, error: "Capacity must be at least 2." });
             }
-        } catch (err) {
-            setError(err.response?.data?.error || 'Failed to delete league.');
-        } finally {
-            setSubmitting(false);
+            league.capacity = capacity;
         }
-    };
+        if (status !== undefined && ['recruiting', 'active', 'completed'].includes(status)) {
+            league.status = status;
+        }
+        if (rules !== undefined) {
+            league.rules = rules;
+        }
+        
+        if (tournamentFormat !== undefined) league.tournamentFormat = tournamentFormat;
+        if (groupStageCount !== undefined) league.groupStageCount = parseInt(groupStageCount, 10) || 4;
 
-    const handleRemoveMember = async (leagueId, memberId, memberName) => {
-        if (!window.confirm(`Remove ${memberName} from this league?`)) return;
+        if (rounds !== undefined && rounds !== null && rounds !== '') {
+            const parsedRounds = parseInt(rounds, 10);
 
-        setSubmitting(true);
-        try {
-            const res = await axios.delete(`${API_BASE_URL}/leagues/${leagueId}/remove-member/${memberId}`);
-            if (res.data.success) {
-                setSuccess(`${memberName} removed successfully.`);
-                onRefresh();
+            if (isNaN(parsedRounds) || parsedRounds < 0) {
+                return res.status(400).json({ success: false, error: "Rounds must be a valid positive whole number." });
             }
-        } catch (err) {
-            setError(err.response?.data?.error || 'Failed to remove member.');
-        } finally {
-            setSubmitting(false);
+
+            if (parsedRounds !== league.rounds) {
+                league.rounds = parsedRounds;
+
+                if (league.status === 'active' && league.players.length > 0) {
+                    await Fixture.deleteMany({ leagueId: league._id });
+
+                    let newSchedulePlan = [];
+                    const formatType = league.tournamentFormat || 'classic';
+
+                    if (formatType === 'knockout') {
+                        newSchedulePlan = generateKnockoutBracket(league.players);
+                    } else if (formatType === 'group_knockout') {
+                        newSchedulePlan = generateGroupAndKnockout(league.players, { 
+                            groupsCount: league.groupStageCount || 4 
+                        });
+                    } else {
+                        newSchedulePlan = generateClassicLeague(league.players, parsedRounds);
+                    }
+
+                    const updatedFixtures = newSchedulePlan.map(match => ({
+                        leagueId: league._id,
+                        ...match
+                    }));
+
+                    await Fixture.insertMany(updatedFixtures);
+                }
+            }
         }
-    };
 
-    return (
-        <div className="space-y-6 text-left">
-            <div className="bg-amber-400/5 border border-amber-400/20 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <div>
-                    <h4 className="text-base font-black text-white tracking-tight">Tournament Management</h4>
-                    <p className="text-xs text-slate-400 mt-1">Create, edit, and delete tournament leagues. Manage player registrations.</p>
-                </div>
-                <button
-                    onClick={() => { resetForm(); setShowCreateForm(true); }}
-                    className="bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-black text-xs uppercase tracking-wider py-3 px-5 rounded-xl shadow-lg shadow-cyan-400/10 transition-all active:scale-[0.98]"
-                >
-                    + Create League
-                </button>
-            </div>
+        await league.save();
 
-            {error && (
-                <div className="p-4 rounded-xl text-sm font-medium border bg-rose-500/10 border-rose-500/20 text-rose-400">
-                    {error}
-                </div>
-            )}
-            {success && (
-                <div className="p-4 rounded-xl text-sm font-medium border bg-emerald-500/10 border-emerald-500/20 text-emerald-400">
-                    {success}
-                </div>
-            )}
+        res.status(200).json({
+            success: true,
+            message: "League and matches updated successfully.",
+            data: league
+        });
+    } catch (error) {
+        if (error.code === 11000) {
+            return res.status(400).json({ success: false, error: "A league with this name already exists." });
+        }
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
 
-            {showCreateForm && (
-                <div className="bg-[#0f131c] border border-slate-800 rounded-2xl p-6 space-y-5">
-                    <h4 className="text-base font-black text-white tracking-tight">
-                        {editingLeague ? 'Edit League' : 'Create New League'}
-                    </h4>
-                    <form onSubmit={handleSubmit} className="space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">League Name</label>
-                                <input
-                                    type="text"
-                                    value={formData.name}
-                                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                    placeholder="e.g. Nairobi Premier Championship"
-                                    required
-                                    className="w-full bg-[#0b0f17] border border-slate-800 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all"
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Max Team Strength</label>
-                                <input
-                                    type="number"
-                                    value={formData.maxStrengthLimit}
-                                    onChange={(e) => setFormData({ ...formData, maxStrengthLimit: parseInt(e.target.value) || 0 })}
-                                    min="1000"
-                                    max="4000"
-                                    required
-                                    className="w-full bg-[#0b0f17] border border-slate-800 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all"
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Capacity (Max players)</label>
-                                <input
-                                    type="number"
-                                    value={formData.capacity}
-                                    onChange={(e) => setFormData({ ...formData, capacity: parseInt(e.target.value) || 2 })}
-                                    min="2"
-                                    max="100"
-                                    required
-                                    className="w-full bg-[#0b0f17] border border-slate-800 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all"
-                                />
-                                <p className="text-[10px] text-slate-500">Min 2, Max 100</p>
-                            </div>
-                            <div className="space-y-2">
-                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                                    {formData.tournamentFormat === 'classic' ? 'Rounds (1 = Single, 2 = Home & Away)' : 'Leg Rounds Count'}
-                                </label>
-                                <input
-                                    type="number"
-                                    value={formData.rounds}
-                                    disabled={formData.tournamentFormat === 'knockout'}
-                                    onChange={(e) => setFormData({ ...formData, rounds: parseInt(e.target.value) || 0 })}
-                                    min="0"
-                                    max="50"
-                                    required
-                                    className="w-full bg-[#0b0f17] border border-slate-800 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
-                                />
-                                <p className="text-[10px] text-slate-500">0 = every team plays each other once</p>
-                            </div>
-                        </div>
+router.delete('/:id', async (req, res) => {
+    try {
+        const league = await League.findById(req.params.id);
 
-                        {/* 🚀 NEW DYNAMIC FORMAT SELECTOR AND DESCRIPTION BOX */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-950/40 p-4 border border-slate-900 rounded-2xl">
-                            <div className="space-y-1.5">
-                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Tournament Structure Format</label>
-                                <select
-                                    value={formData.tournamentFormat}
-                                    onChange={(e) => setFormData({ ...formData, tournamentFormat: e.target.value })}
-                                    className="w-full bg-[#0b0f17] border border-slate-800 text-xs text-cyan-400 font-bold px-3 py-2.5 rounded-xl focus:outline-none focus:border-cyan-500 transition-all"
-                                >
-                                    <option value="classic">🏆 Classic League (Round Robin)</option>
-                                    <option value="knockout">🪓 Bracket Elimination (Knockout)</option>
-                                    <option value="group_knockout">⭐ Group Stage + Knockout</option>
-                                </select>
-                                
-                                <div className="mt-1 px-1 text-[10px] text-slate-400 font-medium leading-relaxed">
-                                    {formData.tournamentFormat === 'classic' && (
-                                        <span className="text-cyan-400 font-semibold">💡 Hint: EPL / LaLiga Style. Every manager plays against each other sequentially over scheduled legs.</span>
-                                    )}
-                                    {formData.tournamentFormat === 'knockout' && (
-                                        <span className="text-amber-400 font-semibold">💡 Hint: UCL Championship Knockout / FA Cup Style. Single elimination sudden death layout tree with automatic progression mapping.</span>
-                                    )}
-                                    {formData.tournamentFormat === 'group_knockout' && (
-                                        <span className="text-emerald-400 font-semibold">💡 Hint: Authentic World Cup / Champions League Style. Splits users into local group pools, then advances the top 2 into brackets.</span>
-                                    )}
-                                </div>
-                            </div>
+        if (!league) {
+            return res.status(404).json({ success: false, error: "League not found." });
+        }
 
-                            {formData.tournamentFormat === 'group_knockout' ? (
-                                <div className="space-y-1.5 animate-in slide-in-from-top-2 duration-150">
-                                    <label className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block">Group Pool Dividers Count</label>
-                                    <select
-                                        value={formData.groupStageCount}
-                                        onChange={(e) => setFormData({ ...formData, groupStageCount: parseInt(e.target.value, 10) })}
-                                        className="w-full bg-[#0b0f17] border border-slate-800 text-xs text-white font-mono px-3 py-2.5 rounded-xl focus:outline-none"
-                                    >
-                                        <option value="2">Divide into 2 Groups</option>
-                                        <option value="4">Divide into 4 Groups (Standard)</option>
-                                        <option value="8">Divide into 8 Groups</option>
-                                    </select>
-                                </div>
-                            ) : (
-                                <div className="hidden sm:block text-center text-slate-600 text-[11px] self-center font-mono uppercase tracking-wider font-semibold">
-                                    ⚙️ Structural Rules Set
-                                </div>
-                            )}
-                        </div>
+        if (league.status === 'active') {
+            return res.status(400).json({ success: false, error: "Cannot delete an active league. Complete or cancel the tournament first." });
+        }
 
-                        <div className="space-y-2">
-                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Status</label>
-                            <select
-                                value={formData.status}
-                                onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                                className="w-full bg-[#0b0f17] border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all"
-                            >
-                                <option value="recruiting">Recruiting</option>
-                                <option value="active">Active</option>
-                                <option value="completed">Completed</option>
-                            </select>
-                        </div>
+        await League.findByIdAndDelete(req.params.id);
 
-                        <div className="space-y-2">
-                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Tournament Rules & Instructions</label>
-                            <textarea
-                                value={formData.rules}
-                                onChange={(e) => setFormData({ ...formData, rules: e.target.value })}
-                                placeholder="Enter specific pairing formats, connection downtime policies, match speed targets, or registration instructions here..."
-                                rows="4"
-                                className="w-full bg-[#0b0f17] border border-slate-800 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all resize-none custom-scrollbar"
-                            />
-                        </div>
+        res.status(200).json({
+            success: true,
+            message: "League deleted successfully."
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
 
-                        <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-3 space-y-1">
-                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Schedule Preview</p>
-                            <p className="text-xs text-slate-300">
-                                Total matches: <span className="text-cyan-400 font-black">{
-                                    (() => {
-                                        const cap = formData.capacity || 0;
-                                        const r = formData.rounds || 0;
-                                        if (cap < 2) return 0;
-                                        const matchesPerRound = Math.floor(cap / 2);
-                                        const totalRounds = r > 0 ? r : (cap % 2 === 0 ? cap - 1 : cap);
-                                        return matchesPerRound * totalRounds;
-                                    })()
-                                }</span>
-                            </p>
-                            <p className="text-[10px] text-slate-500">
-                                {formData.rounds > 0
-                                    ? `${formData.rounds} round(s) × ${Math.floor((formData.capacity || 0) / 2)} match(es)/round`
-                                    : `Full round-robin: ${(formData.capacity || 0) % 2 === 0 ? (formData.capacity || 0) - 1 : (formData.capacity || 0)} rounds`}
-                            </p>
-                        </div>
+router.delete('/:id/remove-member/:userId', async (req, res) => {
+    try {
+        const league = await League.findById(req.params.id);
 
-                        <div className="flex items-center gap-3">
-                            <button
-                                type="submit"
-                                disabled={submitting}
-                                className="bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-black text-xs uppercase tracking-wider py-3 px-6 rounded-xl shadow-lg shadow-cyan-400/10 transition-all disabled:opacity-50 disabled:pointer-events-none"
-                            >
-                                {submitting ? 'Saving...' : editingLeague ? 'Update League' : 'Create League'}
-                            </button>
-                            <button
-                                type="button"
-                                onClick={resetForm}
-                                className="bg-slate-900 hover:bg-slate-800 text-white border border-slate-800 font-bold text-xs uppercase tracking-wider py-3 px-6 rounded-xl transition-all"
-                            >
-                                Cancel
-                            </button>
-                        </div>
-                    </form>
-                </div>
-            )}
+        if (!league) {
+            return res.status(404).json({ success: false, error: "League not found." });
+        }
 
-            <div className="space-y-4">
-                <h4 className="text-sm font-black text-slate-300 uppercase tracking-wider">
-                    Existing Tours ({leagues.length})
-                </h4>
+        const userId = req.params.userId;
+        const memberIndex = league.players.indexOf(userId);
 
-                {leagues.length === 0 ? (
-                    <div className="bg-[#0f131c] border border-slate-800 rounded-2xl p-8 text-center">
-                        <span className="text-4xl mb-3 block">📭</span>
-                        <p className="text-sm text-slate-400">No tournaments found. Create one above to get started.</p>
-                    </div>
-                ) : (
-                    <div className="space-y-4">
-                        {leagues.map((league) => {
-                            const leagueMembers = membersMap[league._id] || {};
-                            const memberEntries = Object.values(leagueMembers);
+        if (memberIndex === -1) {
+            return res.status(400).json({ success: false, error: "User is not a member of this league." });
+        }
 
-                            return (
-                                <div key={league._id} className="bg-[#0f131c] border border-slate-800 rounded-2xl p-5 space-y-4">
-                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                                        <div className="space-y-1">
-                                            <div className="flex items-center gap-2 flex-wrap">
-                                                <h5 className="text-base font-black text-white">{league.name}</h5>
-                                                <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider border ${
-                                                    league.status === 'active'
-                                                        ? 'bg-[#a3e635]/10 text-[#a3e635] border-[#a3e635]/20'
-                                                        : league.status === 'completed'
-                                                        ? 'bg-slate-500/10 text-slate-400 border-slate-500/20'
-                                                        : 'bg-cyan-400/10 text-cyan-400 border-cyan-400/20'
-                                                }`}>
-                                                    {league.status}
-                                                </span>
-                                            </div>
-                                            <div className="flex items-center gap-2 text-[10px] text-slate-400 uppercase font-bold tracking-wider">
-                                                <span className="bg-slate-800/80 text-slate-300 px-2 py-0.5 rounded border border-slate-700">
-                                                    Max STR: {league.maxStrengthLimit}
-                                                </span>
-                                                <span className="bg-slate-800/80 text-slate-300 px-2 py-0.5 rounded border border-slate-700">
-                                                    {league.slotsFilled} / {league.capacity} Players
-                                                </span>
-                                            </div>
-                                        </div>
-                                        <div className="flex items-center gap-2 flex-wrap">
-                                            <button
-                                                onClick={() => handleEdit(league)}
-                                                className="bg-slate-900 hover:bg-slate-800 text-white border border-slate-800 text-[11px] font-black uppercase tracking-wider py-2 px-3 rounded-lg transition-all"
-                                            >
-                                                Edit
-                                            </button>
-                                            <button
-                                                onClick={() => onViewLeague && onViewLeague(league._id)}
-                                                className="bg-cyan-400/10 hover:bg-cyan-400/20 text-cyan-400 border border-cyan-400/30 text-[11px] font-black uppercase tracking-wider py-2 px-3 rounded-lg transition-all"
-                                            >
-                                                Manage
-                                            </button>
-                                            <button
-                                                onClick={() => handleDelete(league._id, league.name)}
-                                                disabled={submitting}
-                                                className="bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-[11px] font-black uppercase tracking-wider py-2 px-3 rounded-lg transition-all disabled:opacity-50 disabled:pointer-events-none"
-                                            >
-                                                Delete
-                                            </button>
-                                        </div>
-                                    </div>
+        league.players.splice(memberIndex, 1);
+        await league.save();
 
-                                    {memberEntries.length > 0 && (
-                                        <div className="space-y-2">
-                                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                                                Registered Players ({memberEntries.length})
-                                            </p>
-                                            <div className="flex flex-wrap gap-2">
-                                                {memberEntries.map((member) => (
-                                                    <div
-                                                        key={member.efootballId || member.username}
-                                                        className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-lg pl-2 pr-1 py-1"
-                                                    >
-                                                        <div className="w-6 h-6 rounded bg-cyan-400/10 flex items-center justify-center text-[10px] font-black text-cyan-400 border border-cyan-400/20">
-                                                            {member.username?.charAt(0).toUpperCase() || '?'}
-                                                        </div>
-                                                        <div className="text-xs">
-                                                            <span className="font-bold text-white">{member.username}</span>
-                                                            <span className="text-slate-500 text-[10px] ml-1">STR: {member.teamStrength || 'N/A'}</span>
-                                                        </div>
-                                                        <button
-                                                            onClick={() => handleRemoveMember(league._id, member._id, member.username)}
-                                                            disabled={submitting}
-                                                            className="text-rose-400 hover:text-rose-300 text-xs font-bold px-1.5 py-0.5 rounded transition-colors disabled:opacity-50"
-                                                            title="Remove member"
-                                                        >
-                                                            ✕
-                                                        </button>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            );
-                        })}
-                    </div>
-                )}
-            </div>
-        </div>
-    );
+        res.status(200).json({
+            success: true,
+            message: "Member removed successfully.",
+            playerCount: league.players.length,
+            capacity: league.capacity
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ========================================================
+// @desc    Admin Only: Manually add a player to a league
+// @route   POST /api/v1/leagues/:id/admin-add
+// ========================================================
+router.post('/:id/admin-add', async (req, res) => {
+    try {
+        const league = await League.findById(req.params.id);
+        const { identifier } = req.body; 
+
+        if (!league) return res.status(404).json({ success: false, error: "League not found." });
+        if (league.status !== 'recruiting') return res.status(400).json({ success: false, error: "Cannot add players. League is already active or completed." });
+        if (league.players.length >= league.capacity) return res.status(400).json({ success: false, error: "League capacity already reached!" });
+
+        const player = await User.findOne({
+            $or: [
+                { username: { $regex: `^${identifier}$`, $options: 'i' } },
+                { whatsappNumber: identifier }
+            ]
+        });
+
+        if (!player) return res.status(404).json({ success: false, error: "Manager profile not found in system." });
+        if (league.players.includes(player._id)) return res.status(400).json({ success: false, error: "Manager is already in this league." });
+
+        league.players.push(player._id);
+
+        const adminInsertNotification = {
+            _id: new mongoose.Types.ObjectId().toString(),
+            message: `⚖️ Admin Action: Organizers have manually registered your squad into "${league.name}". Stand by for fixture generation!`,
+            type: "admin_override",
+            isRead: false,
+            createdAt: new Date()
+        };
+
+        let systemMessage = `Successfully added @${player.username} to ${league.name}.`;
+        let triggerScheduleGeneration = false;
+
+        if (league.players.length === league.capacity) {
+            league.status = 'active';
+            triggerScheduleGeneration = true;
+            systemMessage = `Added @${player.username}. League is now full! Status flipped to ACTIVE and fixtures generated.`;
+        }
+
+        await league.save();
+        await pushAndEmitNotification(req, player._id, adminInsertNotification);
+
+        if (triggerScheduleGeneration) {
+            let schedulePlan = [];
+            const formatType = league.tournamentFormat || 'classic';
+
+            if (formatType === 'knockout') {
+                schedulePlan = generateKnockoutBracket(league.players);
+            } else if (formatType === 'group_knockout') {
+                schedulePlan = generateGroupAndKnockout(league.players, { 
+                    groupsCount: league.groupStageCount || 4 
+                });
+            } else {
+                schedulePlan = generateClassicLeague(league.players, league.rounds || 1);
+            }
+
+            const finalizedFixtures = schedulePlan.map(match => ({
+                leagueId: league._id,
+                ...match
+            }));
+            await Fixture.insertMany(finalizedFixtures);
+
+            const leagueLaunchNotification = {
+                _id: new mongoose.Types.ObjectId().toString(),
+                message: `📅 Fixtures generated! "${league.name}" is officially full and ACTIVE. Head to the Fixtures page to play your matches!`,
+                type: "league_assignment",
+                isRead: false,
+                createdAt: new Date()
+            };
+            await pushAndEmitNotification(req, league.players, leagueLaunchNotification);
+        }
+
+        res.status(200).json({
+            success: true,
+            message: systemMessage,
+            playerCount: league.players.length,
+            capacity: league.capacity
+        });
+
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ========================================================
+// @desc    Admin Only: Fetch absolute populated roster for a league
+// @route   GET /api/v1/leagues/:id/roster
+// ========================================================
+router.get('/:id/roster', async (req, res) => {
+    try {
+        const league = await League.findById(req.params.id).populate('players', 'username teamStrength whatsappNumber');
+        
+        if (!league) {
+            return res.status(404).json({ success: false, error: "League target not found." });
+        }
+
+        res.status(200).json({
+            success: true,
+            status: league.status,
+            capacity: league.capacity,
+            name: league.name,
+            players: league.players || [] 
+        });
+    } catch (error) {
+        console.error("Backend roster endpoint failure:", error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Core automation bracket engine advancement loop logic block
+const checkAndCompleteLeague = async (req, leagueId) => {
+    try {
+        const objectIdLeagueId = typeof leagueId === 'string' ? new mongoose.Types.ObjectId(leagueId) : leagueId;
+        const league = await League.findById(objectIdLeagueId);
+        
+        if (!league || league.status === 'completed') return;
+
+        const formatType = league.tournamentFormat || 'classic';
+
+        // --- HANDLER A: BRACKET ELIMINATION AUTOMATION (KNOCKOUTS) ---
+        if (formatType === 'knockout') {
+            const totalFixtures = await Fixture.find({ leagueId: objectIdLeagueId });
+            const activeMatchday = league.currentMatchday || 1;
+            const currentRoundMatches = totalFixtures.filter(f => f.matchday === activeMatchday);
+            const confirmedMatchesInRound = currentRoundMatches.filter(f => f.status === 'confirmed');
+
+            if (currentRoundMatches.length === 0 || confirmedMatchesInRound.length !== currentRoundMatches.length) {
+                return;
+            }
+
+            if (currentRoundMatches.length === 1 && currentRoundMatches[0].roundName === "Finals") {
+                league.status = 'completed';
+                await league.save();
+                
+                await pushAndEmitNotification(req, league.players, {
+                    _id: new mongoose.Types.ObjectId().toString(),
+                    message: `🏆 GRAND FINALE CONCLUDED! The tournament "${league.name}" is officially complete. Congratulations to our Grand Champion! Check the final bracket layouts now.`,
+                    type: "league_assignment",
+                    isRead: false,
+                    createdAt: new Date()
+                });
+                return;
+            }
+
+            let advancedWinners = [];
+            currentRoundMatches.forEach(match => {
+                const winnerId = match.playerAScore > match.playerBScore ? match.playerA : match.playerB;
+                advancedWinners.push(winnerId);
+            });
+
+            const nextMatchdayNumber = activeMatchday + 1;
+            const nextRoundMatchesCount = advancedWinners.length / 2;
+            let nextRoundName = nextRoundMatchesCount === 1 ? "Finals" : nextRoundMatchesCount === 2 ? "Semifinals" : "Quarterfinals";
+            
+            let nextRoundFixtures = [];
+
+            for (let i = 0; i < nextRoundMatchesCount; i++) {
+                nextRoundFixtures.push({
+                    leagueId: objectIdLeagueId,
+                    matchday: nextMatchdayNumber,
+                    roundName: nextRoundName,
+                    label: `R${nextMatchdayNumber}_MATCH_${i + 1}`,
+                    playerA: advancedWinners[i * 2],
+                    playerB: advancedWinners[i * 2 + 1],
+                    playerAScore: null,
+                    playerBScore: null,
+                    playerASubmittedScore: null,
+                    playerBSubmittedScore: null,
+                    status: 'pending'
+                });
+            }
+
+            await Fixture.insertMany(nextRoundFixtures);
+
+            league.currentMatchday = nextMatchdayNumber;
+            await league.save();
+
+            await pushAndEmitNotification(req, league.players, {
+                _id: new mongoose.Types.ObjectId().toString(),
+                message: `🪓 NEXT ROUND READY: Round ${nextMatchdayNumber} (${nextRoundName}) inside "${league.name}" has loaded! Head to your dashboard to run your match pairings.`,
+                type: "general",
+                isRead: false,
+                createdAt: new Date()
+            });
+
+            return;
+        }
+
+        // --- HANDLER B: CLASSIC TOURNAMENTS LEG STANDARDS ---
+        if (formatType === 'classic') {
+            const totalFixturesCount = await Fixture.countDocuments({ leagueId: objectIdLeagueId });
+            const confirmedFixturesCount = await Fixture.countDocuments({ leagueId: objectIdLeagueId, status: 'confirmed' });
+
+            if (totalFixturesCount > 0 && confirmedFixturesCount === totalFixturesCount) {
+                league.status = 'completed';
+                await league.save();
+
+                await pushAndEmitNotification(req, league.players, {
+                    _id: new mongoose.Types.ObjectId().toString(),
+                    message: `🏆 Season Concluded! All matchdays inside "${league.name}" are finished. Check the final Standings board to see your official rank positioning!`,
+                    type: "league_assignment",
+                    isRead: false,
+                    createdAt: new Date()
+                });
+            }
+        }
+
+    } catch (error) {
+        console.error("Critical failure executing automated progression pipeline loops:", error);
+    }
 };
 
-export default AdminLeagueManager;
+// Subsidiary structural handler helper managing nested post-group bracket escalations
+const handleKnockoutProgressionCheck = async (req, league, totalFixtures) => {
+    const activeMatchday = league.currentMatchday || 1;
+    const currentMatches = totalFixtures.filter(f => f.matchday === activeMatchday);
+    const confirmedMatches = currentMatches.filter(f => f.status === 'confirmed');
+
+    if (currentMatches.length === 0 || confirmedMatches.length !== currentMatches.length) return;
+
+    if (currentMatches.length === 1 && currentMatches[0].roundName === "Finals") {
+        league.status = 'completed';
+        await league.save();
+        return;
+    }
+
+    let advancedWinners = currentMatches.map(m => m.playerAScore > m.playerBScore ? m.playerA : m.playerB);
+    const nextMatchday = activeMatchday + 1;
+    const nextMatchesCount = advancedWinners.length / 2;
+    const roundName = nextMatchesCount === 1 ? "Finals" : "Semifinals";
+
+    let nextFixtures = [];
+    for (let i = 0; i < nextMatchesCount; i++) {
+        nextFixtures.push({
+            leagueId: league._id,
+            matchday: nextMatchday,
+            stageType: 'knockout_stage',
+            roundName,
+            label: `K_R${nextMatchday}_MATCH_${i + 1}`,
+            playerA: advancedWinners[i * 2],
+            playerB: advancedWinners[i * 2 + 1],
+            status: 'pending'
+        });
+    }
+
+    await Fixture.insertMany(nextFixtures);
+    league.currentMatchday = nextMatchday;
+    await league.save();
+};
+
+module.exports = router;

@@ -205,7 +205,7 @@ router.post('/', async (req, res) => {
                 _id: new mongoose.Types.ObjectId().toString(), 
                 message: `📢 New League Formed: "${league.name}" has just opened registrations! Max STR: ${league.maxStrengthLimit}. Secure your slot now!`,
                 type: 'new_league',
-                isRead: false,                       
+                isRead: false,                      
                 createdAt: new Date()
             });
         }
@@ -219,6 +219,7 @@ router.post('/', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
+
 // ========================================================
 // @desc    Join an open recruiting league group slot
 // @route   POST /api/v1/leagues/:id/join
@@ -244,7 +245,6 @@ router.post('/:id/join', async (req, res) => {
         let systemMessage = `Successfully joined ${league.name}!`;
         let triggerScheduleGeneration = false;
 
-        // Send confirmation alert to the user who just registered
         const joinAlertPayload = {
             _id: new mongoose.Types.ObjectId().toString(),
             message: `🔔 Slot reservation logged! You have successfully registered into "${league.name}". You'll be notified automatically the moment this group fills up and matches begin!`,
@@ -266,7 +266,6 @@ router.post('/:id/join', async (req, res) => {
             let schedulePlan = [];
             const formatType = league.tournamentFormat || 'classic';
 
-            // 🚀 DYNAMIC GENERATION ROUTER: Intelligently switches logic without dropping notifications
             if (formatType === 'knockout') {
                 schedulePlan = generateKnockoutBracket(league.players);
             } else if (formatType === 'group_knockout') {
@@ -274,7 +273,6 @@ router.post('/:id/join', async (req, res) => {
                     groupsCount: league.groupStageCount || 4 
                 });
             } else {
-                // Classic League configuration (Home/Away leg optimization matrix)
                 schedulePlan = generateClassicLeague(league.players, league.rounds || 1);
             }
 
@@ -390,7 +388,6 @@ router.post('/fixtures/:fixtureId/submit', async (req, res) => {
             if (doesPlayerAAlign && doesPlayerBAlign) {
                 fixture.status = 'confirmed';
                 
-                // 🚀 FIXED: Both players get immediate confirmation cards
                 matchNotification = {
                     _id: new mongoose.Types.ObjectId().toString(),
                     message: `✅ Match result finalized! Your Matchday ${fixture.matchday} fixture in "${targetLeague?.name || 'League Group'}" against @${submittingUser?.username || 'Opponent'} [${opponentScore} - ${yourScore}] has been confirmed and applied to standings.`,
@@ -421,7 +418,6 @@ router.post('/fixtures/:fixtureId/submit', async (req, res) => {
             } else {
                 fixture.status = 'disputed';
                 
-                // 🚀 FIXED: Disputed real-time alerts pushed to both dashboards
                 matchNotification = {
                     _id: new mongoose.Types.ObjectId().toString(),
                     message: `⚠️ Score conflict! The score reported for Matchday ${fixture.matchday} in "${targetLeague?.name || 'League Group'}" does not align with your submission. Match flagged for dispute resolution.`,
@@ -441,7 +437,6 @@ router.post('/fixtures/:fixtureId/submit', async (req, res) => {
         } else {
             fixture.status = 'awaiting_confirmation';
             
-            // 🚀 FIXED: Recipient gets "Awaiting" alert card
             matchNotification = {
                 _id: new mongoose.Types.ObjectId().toString(),
                 message: `⚽ Score reported! @${submittingUser?.username || 'Opponent'} submitted a result of [${opponentScore} - ${yourScore}] for Matchday ${fixture.matchday} in "${targetLeague?.name || 'League Group'}". Head over to confirm or challenge it!`,
@@ -450,7 +445,6 @@ router.post('/fixtures/:fixtureId/submit', async (req, res) => {
                 createdAt: new Date()
             };
 
-            // Submitter gets a validation card
             submitterNotification = {
                 _id: new mongoose.Types.ObjectId().toString(),
                 message: `⏳ Score submission logged! Your reported result of [${yourScore} - ${opponentScore}] for Matchday ${fixture.matchday} is currently pending opponent confirmation.`,
@@ -462,17 +456,14 @@ router.post('/fixtures/:fixtureId/submit', async (req, res) => {
 
         await fixture.save();
 
-        // Push to opponent player session
         if (matchNotification && opponentId) {
             await pushAndEmitNotification(req, opponentId, matchNotification);
         }
 
-        // Push to submitting player session
         if (submitterNotification && userId) {
             await pushAndEmitNotification(req, userId, submitterNotification);
         }
 
-        // Handle sequential match progression notifications 
         if (triggerProgressionPush) {
             await pushAndEmitNotification(req, [fixture.playerA, fixture.playerB], progressionAlert);
         }
@@ -506,14 +497,12 @@ router.get('/:id/standings', async (req, res) => {
             status: 'confirmed' 
         });
 
-        // 🚀 NEW: Fetch ALL fixtures for this league to trace group stage map assignments early
         const totalFixtures = await Fixture.find({ leagueId: req.params.id });
 
         const standingsMap = {};
         league.players.forEach(player => {
             const playerIdStr = player._id.toString();
 
-            // 🚀 FIXED: Find any fixture involving this player to discover their assigned group tag early
             const trackingFixture = totalFixtures.find(f => 
                 f.playerA?.toString() === playerIdStr || f.playerB?.toString() === playerIdStr
             );
@@ -521,7 +510,6 @@ router.get('/:id/standings', async (req, res) => {
             standingsMap[playerIdStr] = {
                 playerId: player._id,
                 username: player.username,
-                // 🚀 FIXED: Persist group designation tags directly to rows even with 0 played matches!
                 groupLabel: trackingFixture ? trackingFixture.groupLabel : undefined,
                 played: 0,
                 won: 0,
@@ -580,7 +568,6 @@ router.get('/:id/standings', async (req, res) => {
         res.status(200).json({
             success: true,
             leagueName: league.name,
-            // 🚀 FIXED: Transmit master format parameter directly to front-end layout interceptors
             tournamentFormat: league.tournamentFormat || 'classic',
             table: standingsArray
         });
@@ -612,10 +599,11 @@ router.patch('/fixtures/:fixtureId/resolve', async (req, res) => {
         }
 
         fixture.playerAScore = playerAScore;
+        fixture.fixtureId = req.params.fixtureId; 
         fixture.playerBScore = playerBScore;
         fixture.playerASubmittedScore = playerAScore;
         fixture.playerBSubmittedScore = playerBScore;
-        fixture.status = 'confirmed';
+        fixture.status = 'confirmed'; 
 
         await fixture.save();
 
@@ -630,25 +618,27 @@ router.patch('/fixtures/:fixtureId/resolve', async (req, res) => {
 
         await pushAndEmitNotification(req, [fixture.playerA, fixture.playerB], disputeResolvedNotification);
 
+        // Run season completion checks
         await checkAndCompleteLeague(req, fixture.leagueId);
 
         res.status(200).json({
             success: true,
-            message: `Admin Override Successful. Fixture resolved and locked manually.`,
+            message: `Admin Override Successful. Fixture resolved and standings tables re-compiled smoothly.`,
             data: fixture
         });
 
     } catch (error) {
+        console.error("Dispute override script collapse:", error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
+
 // ========================================================
 // @desc    Update league configuration parameters
 // @route   PUT /api/v1/leagues/:id
 // ========================================================
 router.put('/:id', async (req, res) => {
     try {
-        // 🚀 UPDATED: Extracted tournamentFormat and groupStageCount from the payload request body
         const { name, maxStrengthLimit, capacity, status, rounds, rules, tournamentFormat, groupStageCount } = req.body;
         const league = await League.findById(req.params.id);
 
@@ -656,7 +646,6 @@ router.put('/:id', async (req, res) => {
             return res.status(404).json({ success: false, error: "League not found." });
         }
 
-        // Apply standard updates
         if (name !== undefined) league.name = name;
         if (maxStrengthLimit !== undefined) league.maxStrengthLimit = maxStrengthLimit;
         if (capacity !== undefined) {
@@ -672,11 +661,9 @@ router.put('/:id', async (req, res) => {
             league.rules = rules;
         }
         
-        // 🚀 UPDATED: Persist new formatting parameters directly to the league document state
         if (tournamentFormat !== undefined) league.tournamentFormat = tournamentFormat;
         if (groupStageCount !== undefined) league.groupStageCount = parseInt(groupStageCount, 10) || 4;
 
-        // Track if a manual scheduling generation override needs to be triggered
         if (rounds !== undefined && rounds !== null && rounds !== '') {
             const parsedRounds = parseInt(rounds, 10);
 
@@ -688,13 +675,11 @@ router.put('/:id', async (req, res) => {
                 league.rounds = parsedRounds;
 
                 if (league.status === 'active' && league.players.length > 0) {
-                    // Wipe the stale, old fixtures list completely
                     await Fixture.deleteMany({ leagueId: league._id });
 
                     let newSchedulePlan = [];
                     const formatType = league.tournamentFormat || 'classic';
 
-                    // 🚀 FIXED: Dynamic generation mapping selector following our advanced scheduling engine parameters
                     if (formatType === 'knockout') {
                         newSchedulePlan = generateKnockoutBracket(league.players);
                     } else if (formatType === 'group_knockout') {
@@ -702,7 +687,6 @@ router.put('/:id', async (req, res) => {
                             groupsCount: league.groupStageCount || 4 
                         });
                     } else {
-                        // Falls back safely to your multi-round classic configuration legs matrix
                         newSchedulePlan = generateClassicLeague(league.players, parsedRounds);
                     }
 
@@ -783,8 +767,119 @@ router.delete('/:id/remove-member/:userId', async (req, res) => {
     }
 });
 
-// backend/routes/leagues.js - Bottom of the file helper update
+// ========================================================
+// @desc    Admin Only: Manually add a player to a league
+// @route   POST /api/v1/leagues/:id/admin-add
+// ========================================================
+router.post('/:id/admin-add', async (req, res) => {
+    try {
+        const league = await League.findById(req.params.id);
+        const { identifier } = req.body; 
 
+        if (!league) return res.status(404).json({ success: false, error: "League not found." });
+        if (league.status !== 'recruiting') return res.status(400).json({ success: false, error: "Cannot add players. League is already active or completed." });
+        if (league.players.length >= league.capacity) return res.status(400).json({ success: false, error: "League capacity already reached!" });
+
+        const player = await User.findOne({
+            $or: [
+                { username: { $regex: `^${identifier}$`, $options: 'i' } },
+                { whatsappNumber: identifier }
+            ]
+        });
+
+        if (!player) return res.status(404).json({ success: false, error: "Manager profile not found in system." });
+        if (league.players.includes(player._id)) return res.status(400).json({ success: false, error: "Manager is already in this league." });
+
+        league.players.push(player._id);
+
+        const adminInsertNotification = {
+            _id: new mongoose.Types.ObjectId().toString(),
+            message: `⚖️ Admin Action: Organizers have manually registered your squad into "${league.name}". Stand by for fixture generation!`,
+            type: "admin_override",
+            isRead: false,
+            createdAt: new Date()
+        };
+
+        let systemMessage = `Successfully added @${player.username} to ${league.name}.`;
+        let triggerScheduleGeneration = false;
+
+        if (league.players.length === league.capacity) {
+            league.status = 'active';
+            triggerScheduleGeneration = true;
+            systemMessage = `Added @${player.username}. League is now full! Status flipped to ACTIVE and fixtures generated.`;
+        }
+
+        await league.save();
+        await pushAndEmitNotification(req, player._id, adminInsertNotification);
+
+        if (triggerScheduleGeneration) {
+            let schedulePlan = [];
+            const formatType = league.tournamentFormat || 'classic';
+
+            if (formatType === 'knockout') {
+                schedulePlan = generateKnockoutBracket(league.players);
+            } else if (formatType === 'group_knockout') {
+                schedulePlan = generateGroupAndKnockout(league.players, { 
+                    groupsCount: league.groupStageCount || 4 
+                });
+            } else {
+                schedulePlan = generateClassicLeague(league.players, league.rounds || 1);
+            }
+
+            const finalizedFixtures = schedulePlan.map(match => ({
+                leagueId: league._id,
+                ...match
+            }));
+            await Fixture.insertMany(finalizedFixtures);
+
+            const leagueLaunchNotification = {
+                _id: new mongoose.Types.ObjectId().toString(),
+                message: `📅 Fixtures generated! "${league.name}" is officially full and ACTIVE. Head to the Fixtures page to play your matches!`,
+                type: "league_assignment",
+                isRead: false,
+                createdAt: new Date()
+            };
+            await pushAndEmitNotification(req, league.players, leagueLaunchNotification);
+        }
+
+        res.status(200).json({
+            success: true,
+            message: systemMessage,
+            playerCount: league.players.length,
+            capacity: league.capacity
+        });
+
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ========================================================
+// @desc    Admin Only: Fetch absolute populated roster for a league
+// @route   GET /api/v1/leagues/:id/roster
+// ========================================================
+router.get('/:id/roster', async (req, res) => {
+    try {
+        const league = await League.findById(req.params.id).populate('players', 'username teamStrength whatsappNumber');
+        
+        if (!league) {
+            return res.status(404).json({ success: false, error: "League target not found." });
+        }
+
+        res.status(200).json({
+            success: true,
+            status: league.status,
+            capacity: league.capacity,
+            name: league.name,
+            players: league.players || [] 
+        });
+    } catch (error) {
+        console.error("Backend roster endpoint failure:", error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Core automation bracket engine advancement loop logic block
 const checkAndCompleteLeague = async (req, leagueId) => {
     try {
         const objectIdLeagueId = typeof leagueId === 'string' ? new mongoose.Types.ObjectId(leagueId) : leagueId;
@@ -796,28 +891,19 @@ const checkAndCompleteLeague = async (req, leagueId) => {
 
         // --- HANDLER A: BRACKET ELIMINATION AUTOMATION (KNOCKOUTS) ---
         if (formatType === 'knockout') {
-            // 1. Fetch all fixtures currently generated for this bracket tournament
             const totalFixtures = await Fixture.find({ leagueId: objectIdLeagueId });
-            
-            // 2. Locate the maximum matchday/round index currently stored in the database
             const activeMatchday = league.currentMatchday || 1;
             const currentRoundMatches = totalFixtures.filter(f => f.matchday === activeMatchday);
             const confirmedMatchesInRound = currentRoundMatches.filter(f => f.status === 'confirmed');
 
-            // If the current round isn't fully played out yet, halt progression check
             if (currentRoundMatches.length === 0 || confirmedMatchesInRound.length !== currentRoundMatches.length) {
                 return;
             }
 
-            // 3. Check if the tournament is completely finished (The Grand Final just wrapped up)
             if (currentRoundMatches.length === 1 && currentRoundMatches[0].roundName === "Finals") {
                 league.status = 'completed';
                 await league.save();
                 
-                const grandWinnerId = currentRoundMatches[0].playerAScore > currentRoundMatches[0].playerBScore 
-                    ? currentRoundMatches[0].playerA 
-                    : currentRoundMatches[0].playerB;
-
                 await pushAndEmitNotification(req, league.players, {
                     _id: new mongoose.Types.ObjectId().toString(),
                     message: `🏆 GRAND FINALE CONCLUDED! The tournament "${league.name}" is officially complete. Congratulations to our Grand Champion! Check the final bracket layouts now.`,
@@ -828,52 +914,6 @@ const checkAndCompleteLeague = async (req, leagueId) => {
                 return;
             }
 
-            // backend/routes/leagues.js - Bottom of the file helper update
-
-const checkAndCompleteLeague = async (req, leagueId) => {
-    try {
-        const objectIdLeagueId = typeof leagueId === 'string' ? new mongoose.Types.ObjectId(leagueId) : leagueId;
-        const league = await League.findById(objectIdLeagueId);
-        
-        if (!league || league.status === 'completed') return;
-
-        const formatType = league.tournamentFormat || 'classic';
-
-        // --- HANDLER A: BRACKET ELIMINATION AUTOMATION (KNOCKOUTS) ---
-        if (formatType === 'knockout') {
-            // 1. Fetch all fixtures currently generated for this bracket tournament
-            const totalFixtures = await Fixture.find({ leagueId: objectIdLeagueId });
-            
-            // 2. Locate the maximum matchday/round index currently stored in the database
-            const activeMatchday = league.currentMatchday || 1;
-            const currentRoundMatches = totalFixtures.filter(f => f.matchday === activeMatchday);
-            const confirmedMatchesInRound = currentRoundMatches.filter(f => f.status === 'confirmed');
-
-            // If the current round isn't fully played out yet, halt progression check
-            if (currentRoundMatches.length === 0 || confirmedMatchesInRound.length !== currentRoundMatches.length) {
-                return;
-            }
-
-            // 3. Check if the tournament is completely finished (The Grand Final just wrapped up)
-            if (currentRoundMatches.length === 1 && currentRoundMatches[0].roundName === "Finals") {
-                league.status = 'completed';
-                await league.save();
-                
-                const grandWinnerId = currentRoundMatches[0].playerAScore > currentRoundMatches[0].playerBScore 
-                    ? currentRoundMatches[0].playerA 
-                    : currentRoundMatches[0].playerB;
-
-                await pushAndEmitNotification(req, league.players, {
-                    _id: new mongoose.Types.ObjectId().toString(),
-                    message: `🏆 GRAND FINALE CONCLUDED! The tournament "${league.name}" is officially complete. Congratulations to our Grand Champion! Check the final bracket layouts now.`,
-                    type: "league_assignment",
-                    isRead: false,
-                    createdAt: new Date()
-                });
-                return;
-            }
-
-            // 4. ADVANCEMENT GENERATOR: If the current round is done, compile the next bracket tier!
             let advancedWinners = [];
             currentRoundMatches.forEach(match => {
                 const winnerId = match.playerAScore > match.playerBScore ? match.playerA : match.playerB;
@@ -886,7 +926,6 @@ const checkAndCompleteLeague = async (req, leagueId) => {
             
             let nextRoundFixtures = [];
 
-            // Group the advancing winners side-by-side into fresh pairings
             for (let i = 0; i < nextRoundMatchesCount; i++) {
                 nextRoundFixtures.push({
                     leagueId: objectIdLeagueId,
@@ -903,14 +942,11 @@ const checkAndCompleteLeague = async (req, leagueId) => {
                 });
             }
 
-            // Persist the upcoming round tier to MongoDB rows
             await Fixture.insertMany(nextRoundFixtures);
 
-            // Advance the league's calendar pointer to unlock the next round on user dashboards
             league.currentMatchday = nextMatchdayNumber;
             await league.save();
 
-            // Notify everyone remaining that the next round has officially dropped
             await pushAndEmitNotification(req, league.players, {
                 _id: new mongoose.Types.ObjectId().toString(),
                 message: `🪓 NEXT ROUND READY: Round ${nextMatchdayNumber} (${nextRoundName}) inside "${league.name}" has loaded! Head to your dashboard to run your match pairings.`,
@@ -946,78 +982,6 @@ const checkAndCompleteLeague = async (req, leagueId) => {
     }
 };
 
-            // 4. ADVANCEMENT GENERATOR: If the current round is done, compile the next bracket tier!
-            let advancedWinners = [];
-            currentRoundMatches.forEach(match => {
-                const winnerId = match.playerAScore > match.playerBScore ? match.playerA : match.playerB;
-                advancedWinners.push(winnerId);
-            });
-
-            const nextMatchdayNumber = activeMatchday + 1;
-            const nextRoundMatchesCount = advancedWinners.length / 2;
-            let nextRoundName = nextRoundMatchesCount === 1 ? "Finals" : nextRoundMatchesCount === 2 ? "Semifinals" : "Quarterfinals";
-            
-            let nextRoundFixtures = [];
-
-            // Group the advancing winners side-by-side into fresh pairings
-            for (let i = 0; i < nextRoundMatchesCount; i++) {
-                nextRoundFixtures.push({
-                    leagueId: objectIdLeagueId,
-                    matchday: nextMatchdayNumber,
-                    roundName: nextRoundName,
-                    label: `R${nextMatchdayNumber}_MATCH_${i + 1}`,
-                    playerA: advancedWinners[i * 2],
-                    playerB: advancedWinners[i * 2 + 1],
-                    playerAScore: null,
-                    playerBScore: null,
-                    playerASubmittedScore: null,
-                    playerBSubmittedScore: null,
-                    status: 'pending'
-                });
-            }
-
-            // Persist the upcoming round tier to MongoDB rows
-            await Fixture.insertMany(nextRoundFixtures);
-
-            // Advance the league's calendar pointer to unlock the next round on user dashboards
-            league.currentMatchday = nextMatchdayNumber;
-            await league.save();
-
-            // Notify everyone remaining that the next round has officially dropped
-            await pushAndEmitNotification(req, league.players, {
-                _id: new mongoose.Types.ObjectId().toString(),
-                message: `🪓 NEXT ROUND READY: Round ${nextMatchdayNumber} (${nextRoundName}) inside "${league.name}" has loaded! Head to your dashboard to run your match pairings.`,
-                type: "general",
-                isRead: false,
-                createdAt: new Date()
-            });
-
-            return;
-        }
-
-        // --- HANDLER B: CLASSIC TOURNAMENTS LEG STANDARDS ---
-        if (formatType === 'classic') {
-            const totalFixturesCount = await Fixture.countDocuments({ leagueId: objectIdLeagueId });
-            const confirmedFixturesCount = await Fixture.countDocuments({ leagueId: objectIdLeagueId, status: 'confirmed' });
-
-            if (totalFixturesCount > 0 && confirmedFixturesCount === totalFixturesCount) {
-                league.status = 'completed';
-                await league.save();
-
-                await pushAndEmitNotification(req, league.players, {
-                    _id: new mongoose.Types.ObjectId().toString(),
-                    message: `🏆 Season Concluded! All matchdays inside "${league.name}" are finished. Check the final Standings board to see your official rank positioning!`,
-                    type: "league_assignment",
-                    isRead: false,
-                    createdAt: new Date()
-                });
-            }
-        }
-
-    } catch (error) {
-        console.error("Critical failure executing automated progression pipeline loops:", error);
-    }
-};
 // Subsidiary structural handler helper managing nested post-group bracket escalations
 const handleKnockoutProgressionCheck = async (req, league, totalFixtures) => {
     const activeMatchday = league.currentMatchday || 1;
@@ -1026,7 +990,6 @@ const handleKnockoutProgressionCheck = async (req, league, totalFixtures) => {
 
     if (currentMatches.length === 0 || confirmedMatches.length !== currentMatches.length) return;
 
-    // Final check loop if the bracket tournament has reached its final match row
     if (currentMatches.length === 1 && currentMatches[0].roundName === "Finals") {
         league.status = 'completed';
         await league.save();

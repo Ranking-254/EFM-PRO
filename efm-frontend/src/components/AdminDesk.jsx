@@ -4,7 +4,6 @@ import axios from 'axios';
 import AdminLeagueManager from './AdminLeagueManager';
 import AdminApprovalsManager from './AdminApprovalsManager'; 
 
-
 const API_BASE_URL = window.location.hostname === 'localhost' 
     ? 'http://localhost:5000/api/v1' 
     : 'https://efm-pro.onrender.com/api/v1';
@@ -19,6 +18,9 @@ const AdminDesk = ({ leagueId, onSelectLeague }) => {
     const [success, setSuccess] = useState('');
     const [leagues, setLeagues] = useState([]);
 
+    // 🚀 NEW: State tracker for current matchday dropdown filter
+    const [selectedMatchday, setSelectedMatchday] = useState('all');
+
     const [resolveForm, setResolveForm] = useState({
         fixtureId: null,
         playerAScore: '',
@@ -32,7 +34,6 @@ const AdminDesk = ({ leagueId, onSelectLeague }) => {
 
     const fetchLeagues = async () => {
         try {
-            // 🚀 FIXED: Pointed back to the correct league endpoint route instead of pending reserve users
             const res = await axios.get(`${API_BASE_URL}/leagues/all`);
             if (res.data.success) {
                 setLeagues(res.data.data);
@@ -65,12 +66,21 @@ const AdminDesk = ({ leagueId, onSelectLeague }) => {
         try {
             const fixturesRes = await axios.get(`${API_BASE_URL}/leagues/${leagueId}/fixtures`);
             if (fixturesRes.data.success) {
-                const disputed = fixturesRes.data.data.filter(f => f.status === 'disputed');
-                setDisputedFixtures(disputed);
+                // Captures both true player disputes AND stalled pending matches for total walkover override support
+                const administrativeTargets = fixturesRes.data.data.filter(
+                    f => f.status === 'disputed' || f.status === 'pending'
+                );
+                setDisputedFixtures(administrativeTargets);
+
+                // 🚀 NEW: Dynamically set default view to the lowest active matchday if it hasn't been chosen yet
+                if (administrativeTargets.length > 0 && selectedMatchday === 'all') {
+                    const dynamicMatchdays = [...new Set(administrativeTargets.map(f => f.matchday))].sort((a, b) => a - b);
+                    setSelectedMatchday(dynamicMatchdays[0].toString());
+                }
             }
         } catch (err) {
-            setError('Failed to load disputed fixtures.');
-            console.error('Disputes fetch error:', err);
+            setError('Failed to load match fixtures.');
+            console.error('Fixtures admin fetch error:', err);
         } finally {
             setLoading(false);
         }
@@ -104,12 +114,12 @@ const AdminDesk = ({ leagueId, onSelectLeague }) => {
             );
 
             if (res.data.success) {
-                setSuccess('Fixtures resolved and bracket unlocked!');
+                setSuccess('Fixtures resolved and standings re-compiled successfully!');
                 setResolveForm({ fixtureId: null, playerAScore: '', playerBScore: '' });
                 fetchDisputedFixtures();
             }
         } catch (err) {
-            const serverErr = err.response?.data?.error || 'Failed to resolve dispute.';
+            const serverErr = err.response?.data?.error || 'Failed to resolve match scoreline.';
             setError(serverErr);
         } finally {
             setResolving(null);
@@ -127,6 +137,14 @@ const AdminDesk = ({ leagueId, onSelectLeague }) => {
         setActiveTab('disputes');
     };
 
+    // 🚀 NEW: Dynamic compilation list of unique matchday numbers present in the dataset
+    const uniqueMatchdays = [...new Set(disputedFixtures.map(f => f.matchday))].sort((a, b) => a - b);
+
+    // 🚀 NEW: Compute the precise sub-array targeted by our selection state pipeline
+    const filteredFixtures = selectedMatchday === 'all' 
+        ? disputedFixtures 
+        : disputedFixtures.filter(f => f.matchday.toString() === selectedMatchday);
+
     if (loading && leagues.length === 0) {
         return (
             <div className="flex items-center justify-center py-20">
@@ -139,7 +157,7 @@ const AdminDesk = ({ leagueId, onSelectLeague }) => {
     }
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-6 text-left">
             <div className="bg-amber-400/5 border border-amber-400/20 rounded-2xl p-4">
                 <h4 className="text-sm font-black text-amber-400 uppercase tracking-wider">⚖️ Administrative Resolution Desk</h4>
                 <p className="text-xs text-slate-400 mt-1">Manage tournaments, leagues, verify members, and resolve disputes.</p>
@@ -201,7 +219,7 @@ const AdminDesk = ({ leagueId, onSelectLeague }) => {
                     {!leagueId ? (
                         <div className="bg-[#0f131c] border border-slate-800 rounded-2xl p-8 text-center">
                             <span className="text-4xl mb-3 block">📋</span>
-                            <p className="text-sm text-slate-400">Select a league from Tournament Manager to view disputes.</p>
+                            <p className="text-sm text-slate-400">Select a league from Tournament Manager to view disputes and pending fixtures.</p>
                             <button onClick={() => setActiveTab('leagues')} className="mt-4 bg-cyan-400 hover:bg-cyan-300 text-slate-950 text-xs font-black uppercase tracking-wider py-2.5 px-5 rounded-xl transition-all">
                                 Go to Tournament Manager
                             </button>
@@ -241,42 +259,78 @@ const AdminDesk = ({ leagueId, onSelectLeague }) => {
                                             </div>
                                         </div>
                                         <button type="submit" disabled={resolving === resolveForm.fixtureId} className="w-full bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-sm py-4 rounded-xl shadow-lg transition-all disabled:opacity-50 uppercase tracking-wider">
-                                            {resolving === resolveForm.fixtureId ? 'Resolving...' : 'Lock Scoreline & Unlock Standings'}
+                                            {resolving === resolveForm.fixtureId ? 'Resolving Match...' : 'Lock Scoreline & Update Rankings'}
                                         </button>
                                     </form>
                                 </div>
                             )}
 
-                            <h4 className="text-sm font-black text-slate-300 uppercase tracking-wider flex items-center gap-2">
-                                <span className="w-1.5 h-1.5 bg-rose-500 rounded-full"></span>
-                                Disputed Fixtures ({disputedFixtures.length})
-                            </h4>
+                            {/* 🚀 NEW: HUD FILTER BAR BOX WITH SELECT DROPDOWN ELEMENT */}
+                            <div className="bg-[#0f131c] border border-slate-800 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                <h4 className="text-sm font-black text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                                    <span className="w-1.5 h-1.5 bg-amber-400 rounded-full"></span>
+                                    Roster Fixtures ({filteredFixtures.length} Shown / {disputedFixtures.length} Total)
+                                </h4>
+                                
+                                <div className="flex items-center gap-2">
+                                    <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider font-mono">Filter Week:</label>
+                                    <select
+                                        value={selectedMatchday}
+                                        onChange={(e) => setSelectedMatchday(e.target.value)}
+                                        className="bg-[#0b0f17] border border-slate-800 text-xs text-cyan-400 font-bold font-mono px-3 py-2 rounded-xl focus:outline-none focus:border-cyan-500 transition-all"
+                                    >
+                                        <option value="all">Display All Matchdays</option>
+                                        {uniqueMatchdays.map((day) => (
+                                            <option key={day} value={day.toString()}>Matchday {day}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
 
-                            {disputedFixtures.length === 0 ? (
+                            {filteredFixtures.length === 0 ? (
                                 <div className="bg-[#0f131c] border border-slate-800 rounded-2xl p-8 text-center">
                                     <span className="text-4xl mb-3 block">✅</span>
-                                    <p className="text-sm text-slate-400">No disputes. All matches are finalized.</p>
+                                    <p className="text-sm text-slate-400">All matches for the selected filtering week are fully finalized!</p>
                                 </div>
                             ) : (
                                 <div className="space-y-3">
-                                    {disputedFixtures.map((fixture) => {
-                                        const playerA = fixture.playerA._id ? fixture.playerA : { _id: fixture.playerA, username: 'Player A' };
-                                        const playerB = fixture.playerB._id ? fixture.playerB : { _id: fixture.playerB, username: 'Player B' };
+                                    {/* 🚀 CHANGED: Maps from filteredFixtures layout state instead of bloated master list array */}
+                                    {filteredFixtures.map((fixture) => {
+                                        const playerA = fixture.playerA?._id ? fixture.playerA : { _id: fixture.playerA, username: 'Player A' };
+                                        const playerB = fixture.playerB?._id ? fixture.playerB : { _id: fixture.playerB, username: 'Player B' };
                                         const isResolving = resolving === fixture._id;
 
+                                        const isTrueDispute = fixture.status === 'disputed';
+                                        const borderClass = isTrueDispute ? 'border-rose-500/30 bg-[#0f131c]' : 'border-slate-800/80 bg-[#0f131c]/60';
+                                        const badgeClass = isTrueDispute 
+                                            ? 'border-rose-500/20 bg-rose-500/10 text-rose-400' 
+                                            : 'border-amber-500/20 bg-amber-500/5 text-amber-400';
+
                                         return (
-                                            <div key={fixture._id} className="bg-[#0f131c] border border-rose-500/20 rounded-2xl p-5 space-y-4">
+                                            <div key={fixture._id} className={`border rounded-2xl p-5 space-y-4 transition-all ${borderClass}`}>
                                                 <div className="flex items-center justify-between">
-                                                    <span className="text-[10px] font-bold text-rose-400 uppercase tracking-wider">Matchday {fixture.matchday}</span>
-                                                    <span className="px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider border border-rose-500/20 bg-rose-500/10 text-rose-400">DISPUTED</span>
+                                                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Matchday {fixture.matchday}</span>
+                                                    <span className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider border ${badgeClass}`}>
+                                                        {isTrueDispute ? 'DISPUTED' : 'STALLED / PENDING'}
+                                                    </span>
                                                 </div>
-                                                <div className="flex items-center justify-between">
-                                                    <div className="text-sm font-bold text-white">{playerA.username}<span className="text-rose-400 text-xs ml-2 font-mono">claimed {fixture.playerASubmittedScore !== null ? fixture.playerASubmittedScore : '?'}</span></div>
-                                                    <span className="text-slate-500 px-3">VS</span>
-                                                    <div className="text-sm font-bold text-white text-right">{playerB.username}<span className="text-rose-400 text-xs ml-2 font-mono">claimed {fixture.playerBSubmittedScore !== null ? fixture.playerBSubmittedScore : '?'}</span></div>
+                                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                                    <div className="text-sm font-bold text-white truncate max-w-full sm:max-w-[45%]">
+                                                        {playerA.username}
+                                                        {isTrueDispute && <span className="text-rose-400 text-xs ml-2 font-mono block sm:inline">claimed {fixture.playerASubmittedScore ?? '?'}</span>}
+                                                    </div>
+                                                    <span className="text-slate-600 font-mono text-xs text-center shrink-0">VS</span>
+                                                    <div className="text-sm font-bold text-white text-left sm:text-right truncate max-w-full sm:max-w-[45%]">
+                                                        {playerB.username}
+                                                        {isTrueDispute && <span className="text-rose-400 text-xs ml-2 font-mono block sm:inline">claimed {fixture.playerBSubmittedScore ?? '?'}</span>}
+                                                    </div>
                                                 </div>
-                                                <button onClick={() => openResolveForm(fixture)} disabled={isResolving} className="w-full bg-amber-400/10 hover:bg-amber-400/20 text-amber-400 border border-amber-400/30 text-xs font-black uppercase tracking-wider py-3 rounded-xl transition-all disabled:opacity-50">
-                                                    {isResolving ? 'Processing...' : '⚖️ Override & Resolve'}
+                                                <button 
+                                                    onClick={() => openResolveForm(fixture)} 
+                                                    disabled={isResolving} 
+                                                    className="w-full bg-amber-400/10 hover:bg-amber-400/20 text-amber-400 border border-amber-400/30 text-xs font-black uppercase tracking-wider py-3 rounded-xl transition-all disabled:opacity-50"
+                                                >
+                                                    {isTrueDispute ? '⚖️ Override & Resolve Dispute' : '⚡ Force Scoreline (Walkover / Default)'}
                                                 </button>
                                             </div>
                                         );

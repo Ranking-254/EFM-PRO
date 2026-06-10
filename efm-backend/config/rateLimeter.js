@@ -4,7 +4,7 @@ import rateLimit from 'express-rate-limit';
 // 🛑 GLOBAL AUTH LIMITER: Applies to standard users logging in
 // config/rateLimiter.js
 export const loginLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, 
+    windowMs: 1 * 60 * 1000, 
     max: 10, 
     statusCode: 200, // 🚀 CRITICAL FIX: Forces the server to send a 200 OK so the payload isn't swallowed by proxies
     message: {

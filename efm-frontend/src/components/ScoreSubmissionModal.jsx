@@ -6,7 +6,6 @@ const API_BASE_URL = window.location.hostname === 'localhost'
     ? 'http://localhost:5000/api/v1' 
     : 'https://efm-pro.onrender.com/api/v1';
 
-
 const ScoreSubmissionModal = ({ isOpen, onClose, fixture, currentUserId, onSubmissionComplete }) => {
     const [yourScore, setYourScore] = useState('');
     const [opponentScore, setOpponentScore] = useState('');
@@ -25,15 +24,17 @@ const ScoreSubmissionModal = ({ isOpen, onClose, fixture, currentUserId, onSubmi
 
     if (!isOpen || !fixture) return null;
 
-    const isPlayerA = fixture.playerA._id === currentUserId || fixture.playerA === currentUserId;
+    // 🚀 FIXED: Robust check whether playerA is an object or a raw ID string
+    const targetPlayerAId = fixture.playerA?._id || fixture.playerA;
+    const isPlayerA = String(targetPlayerAId) === String(currentUserId);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
         setSuccess('');
 
-        const parsedYourScore = parseInt(yourScore);
-        const parsedOpponentScore = parseInt(opponentScore);
+        const parsedYourScore = parseInt(yourScore, 10);
+        const parsedOpponentScore = parseInt(opponentScore, 10);
 
         if (isNaN(parsedYourScore) || parsedYourScore < 0) {
             setError('Please enter a valid score for your team.');
@@ -71,12 +72,16 @@ const ScoreSubmissionModal = ({ isOpen, onClose, fixture, currentUserId, onSubmi
         }
     };
 
-    const opponentName = isPlayerA ? fixture.playerB.username : fixture.playerA.username;
-    const playerName = isPlayerA ? fixture.playerA.username : fixture.playerB.username;
+    // 🚀 FIXED: Safe fallback extractors preventing undefined string crashes on unpopulated bracket branches
+    const rawNameA = fixture.playerA?.username || `Manager (${String(fixture.playerA).substring(0, 5)}...)`;
+    const rawNameB = fixture.playerB?.username || `Manager (${String(fixture.playerB).substring(0, 5)}...)`;
+
+    const playerName = isPlayerA ? rawNameA : rawNameB;
+    const opponentName = isPlayerA ? rawNameB : rawNameA;
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-            <div className="w-full max-w-lg bg-[#121824] border border-slate-800 rounded-3xl shadow-2xl p-6 sm:p-8 space-y-6 animate-fade-in">
+            <div className="w-full max-w-lg bg-[#121824] border border-slate-800 rounded-3xl shadow-2xl p-6 sm:p-8 space-y-6 animate-fade-in text-left">
                 <div className="flex items-center justify-between">
                     <h3 className="text-xl font-black text-white tracking-tight">Submit Match Result</h3>
                     <button
@@ -88,11 +93,13 @@ const ScoreSubmissionModal = ({ isOpen, onClose, fixture, currentUserId, onSubmi
                 </div>
 
                 <div className="bg-[#0b0f17] rounded-xl p-4 space-y-3">
-                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Matchday {fixture.matchday}</p>
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                        {fixture.roundName ? `${fixture.roundName} • ` : ''}Matchday {fixture.matchday}
+                    </p>
                     <div className="flex items-center justify-between">
-                        <span className="text-sm font-bold text-cyan-400">{playerName} (You)</span>
-                        <span className="text-slate-500 text-xs">VS</span>
-                        <span className="text-sm font-bold text-slate-300">{opponentName}</span>
+                        <span className="text-sm font-bold text-cyan-400 truncate max-w-[42%]">{playerName} (You)</span>
+                        <span className="text-slate-500 text-xs shrink-0 px-2">VS</span>
+                        <span className="text-sm font-bold text-slate-300 truncate max-w-[42%]">{opponentName}</span>
                     </div>
                 </div>
 
@@ -111,7 +118,7 @@ const ScoreSubmissionModal = ({ isOpen, onClose, fixture, currentUserId, onSubmi
                 {!success && (
                     <form onSubmit={handleSubmit} className="space-y-5">
                         <div className="space-y-2">
-                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
                                 {playerName} (Your Score) — {isPlayerA ? 'Home' : 'Away'}
                             </label>
                             <input
@@ -126,7 +133,7 @@ const ScoreSubmissionModal = ({ isOpen, onClose, fixture, currentUserId, onSubmi
                         </div>
 
                         <div className="space-y-2">
-                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
                                 {opponentName} (Opponent Score) — {isPlayerA ? 'Away' : 'Home'}
                             </label>
                             <input

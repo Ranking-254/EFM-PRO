@@ -490,6 +490,10 @@ router.post('/fixtures/:fixtureId/submit', async (req, res) => {
     }
 });
 
+// ========================================================
+// @desc    Get individual league standings table ledger
+// @route   GET /api/v1/leagues/:id/standings
+// ========================================================
 router.get('/:id/standings', async (req, res) => {
     try {
         const league = await League.findById(req.params.id).populate('players', 'username');
@@ -502,11 +506,23 @@ router.get('/:id/standings', async (req, res) => {
             status: 'confirmed' 
         });
 
+        // 🚀 NEW: Fetch ALL fixtures for this league to trace group stage map assignments early
+        const totalFixtures = await Fixture.find({ leagueId: req.params.id });
+
         const standingsMap = {};
         league.players.forEach(player => {
-            standingsMap[player._id.toString()] = {
+            const playerIdStr = player._id.toString();
+
+            // 🚀 FIXED: Find any fixture involving this player to discover their assigned group tag early
+            const trackingFixture = totalFixtures.find(f => 
+                f.playerA?.toString() === playerIdStr || f.playerB?.toString() === playerIdStr
+            );
+
+            standingsMap[playerIdStr] = {
                 playerId: player._id,
                 username: player.username,
+                // 🚀 FIXED: Persist group designation tags directly to rows even with 0 played matches!
+                groupLabel: trackingFixture ? trackingFixture.groupLabel : undefined,
                 played: 0,
                 won: 0,
                 drawn: 0,
@@ -564,6 +580,8 @@ router.get('/:id/standings', async (req, res) => {
         res.status(200).json({
             success: true,
             leagueName: league.name,
+            // 🚀 FIXED: Transmit master format parameter directly to front-end layout interceptors
+            tournamentFormat: league.tournamentFormat || 'classic',
             table: standingsArray
         });
 
@@ -571,6 +589,7 @@ router.get('/:id/standings', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
+
 
 // ========================================================
 // @desc    Admin dispute resolution and score override

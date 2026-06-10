@@ -3,7 +3,15 @@ const express = require('express');
 const router = express.Router();
 const User = require('../models/user');
 const League = require('../models/League'); // Adjust path to your League model
+const Fixture = require('../models/Fixture'); // 🚀 FIXED: Added missing Fixture model import
 const { adminLimiter } = require('../config/rateLimeter'); // FIXED: Converted to CommonJS require format
+
+// 🚀 FIXED: Added missing algorithmic scheduler core utilities import
+const { 
+    generateClassicLeague, 
+    generateKnockoutBracket, 
+    generateGroupAndKnockout 
+} = require('../utils/scheduler'); 
 
 // @desc    Get all unassigned/pending reserve players
 // @route   GET /api/v1/admin/pending-users
@@ -26,27 +34,61 @@ router.get('/pending-users', async (req, res) => {
 // @route   POST /api/v1/admin/leagues/create-from-reserve
 router.post('/leagues/create-from-reserve', adminLimiter, async (req, res) => { // 🚀 PROTECTED
     try {
-        // 🚀 FIXED: Added 'rules' to the destructuring assignment block!
-        const { leagueName, maxStrengthLimit, capacity, rounds, playerIds, rules } = req.body;
+        // 🚀 FIXED: Destructured tournamentFormat and groupStageCount passed from React form fields
+        const { leagueName, maxStrengthLimit, capacity, rounds, playerIds, tournamentFormat, groupStageCount, rules } = req.body;
 
         if (!leagueName || !playerIds || playerIds.length === 0) {
             return res.status(400).json({ success: false, error: 'Provide a league name and select at least one player.' });
         }
 
+        const parsedCapacity = parseInt(capacity, 10) || 10;
+        
+        // 🚀 AUTOMATION ENGINE LINK: If assigned players perfectly hit capacity limit on launch, kickstart season
+        const shouldLaunchImmediately = playerIds.length === parsedCapacity;
+        const targetStatus = shouldLaunchImmediately ? 'active' : 'recruiting';
+
         // 1. Create the new league bracket with rules explicitly passed
         const newLeague = await League.create({
             name: leagueName,
             maxStrengthLimit: parseInt(maxStrengthLimit, 10) || 3200,
-            capacity: parseInt(capacity, 10) || 10,
+            capacity: parsedCapacity,
             rounds: parseInt(rounds, 10) || 0,
             players: playerIds,
-            status: 'recruiting',
-            rules: rules || '' // 🚀 FIXED: Saved into your database document correctly!
+            status: targetStatus,
+            tournamentFormat: tournamentFormat || 'classic', // 🚀 FIXED: Captures structure parameters natively
+            groupStageCount: parseInt(groupStageCount, 10) || 0, // 🚀 FIXED: Captures pool dividers parameters natively
+            rules: rules || '' 
         });
 
-        // 2. Clear booking flags, set approval status to 'approved', and insert entry notification
+        // 🚀 2. DYNAMIC SCHEDULER: Computes and inserts calendar matches instantly if the bracket is full
+        if (shouldLaunchImmediately) {
+            let schedulePlan = [];
+            const formatType = newLeague.tournamentFormat;
+
+            if (formatType === 'knockout') {
+                schedulePlan = generateKnockoutBracket(playerIds);
+            } else if (formatType === 'group_knockout') {
+                schedulePlan = generateGroupAndKnockout(playerIds, { 
+                    groupsCount: newLeague.groupStageCount || 2 
+                });
+            } else {
+                schedulePlan = generateClassicLeague(playerIds, newLeague.rounds || 1);
+            }
+
+            const finalizedFixtures = schedulePlan.map(match => ({
+                leagueId: newLeague._id,
+                ...match
+            }));
+
+            // Safely batch-write fixture documents straight to MongoDB
+            await Fixture.insertMany(finalizedFixtures);
+        }
+
+        // 3. Clear booking flags, set approval status to 'approved', and insert entry notification
         const welcomeNotification = {
-            message: `🔥 Boom! You have been officially added to the newly formed league: "${leagueName}". Head over to the Tournament Hub to review your fixtures!`,
+            message: shouldLaunchImmediately
+                ? `🔥 Boom! You have been added to "${leagueName}". The group is FULL, fixtures have generated, and matches are officially LIVE!`
+                : `🔥 Boom! You have been officially added to the newly formed recruiting league: "${leagueName}". Head over to the Tournament Hub to check progress!`,
             type: "league_assignment"
         };
 
@@ -60,14 +102,15 @@ router.post('/leagues/create-from-reserve', adminLimiter, async (req, res) => { 
 
         res.status(201).json({
             success: true,
-            message: `Successfully provisioned "${leagueName}" with ${playerIds.length} reserve managers!`,
+            message: shouldLaunchImmediately
+                ? `Successfully provisioned and launched "${leagueName}" fixtures dynamically with ${playerIds.length} managers!`
+                : `Successfully provisioned recruiting board "${leagueName}" with ${playerIds.length} reserve managers!`,
             data: newLeague
         });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
 });
-
 
 // @desc    Standalone Single-User Approval
 // @route   POST /api/v1/admin/users/:userId/approve

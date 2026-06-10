@@ -30,10 +30,17 @@ const LeagueTable = ({ leagueId, currentUser }) => {
         setLoading(true);
         try {
             const res = await axios.get(`${API_BASE_URL}/leagues/${id}/standings`);
+            console.log("=== LEAGUE TABLE DATA DIAGNOSTICS ===", {
+                success: res.data.success,
+                leagueName: res.data.leagueName,
+                receivedFormat: res.data.tournamentFormat, // Check if this says 'group_knockout'
+                sampleRow: res.data.table?.[0] // Inspecting if groupLabel exists on rows
+            });
+
             if (res.data.success) {
                 setStandings(res.data.table);
                 setLeagueName(res.data.leagueName);
-                // 🚀 NEW: Capturing structural format flag sent back from backend standings route
+                // Fallback to classic if backend omitted it
                 setTournamentFormat(res.data.tournamentFormat || 'classic');
             }
         } catch (err) {
@@ -42,6 +49,7 @@ const LeagueTable = ({ leagueId, currentUser }) => {
         } finally {
             setLoading(false);
         }
+    
     };
 
     const handleRowClick = async (row) => {
@@ -158,6 +166,8 @@ const LeagueTable = ({ leagueId, currentUser }) => {
         }`;
     };
 
+    // src/components/LeagueTable.jsx - Layout Render Section Update
+
     return (
         <div className="w-full max-w-5xl bg-[#0f131c] border border-slate-900 rounded-3xl p-4 sm:p-10 shadow-2xl space-y-6 sm:space-y-8 text-left">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-900 pb-6">
@@ -173,7 +183,7 @@ const LeagueTable = ({ leagueId, currentUser }) => {
                 </div>
                 
                 {/* Responsive layout switcher panel (Only displays on mobile frames when non-group and non-knockout view matches) */}
-                {!isGroupFormat && tournamentFormat !== 'knockout' && (
+                {tournamentFormat !== 'group_knockout' && tournamentFormat !== 'knockout' && (
                     <div className="sm:hidden flex items-center bg-[#070a0f] border border-slate-800 p-1 rounded-xl w-fit self-end">
                         <button
                             onClick={() => setViewMode('short')}
@@ -203,7 +213,7 @@ const LeagueTable = ({ leagueId, currentUser }) => {
 
             {/* --- CORE UI MAPPING LAYER SELECTOR --- */}
             {tournamentFormat === 'knockout' ? (
-                /* 🪓 PATH C: Premium Bracket Elimination Active Contenders Matrix Box Layout */
+                /* 🪓 PATH C: Bracket Elimination Contenders Table */
                 <div className="overflow-x-auto rounded-xl bg-slate-950/20 border border-slate-900">
                     <table className="w-full text-left border-collapse">
                         <thead>
@@ -217,7 +227,6 @@ const LeagueTable = ({ leagueId, currentUser }) => {
                         <tbody className="divide-y divide-slate-900 text-xs sm:text-sm font-medium text-slate-300">
                             {standings.map((row, index) => {
                                 const isMe = isCurrentUserRow(row);
-                                // Logic evaluating survival: A manager is alive if they have clean zero losses logged 
                                 const isAlive = (row.lost || 0) === 0;
 
                                 return (
@@ -252,8 +261,90 @@ const LeagueTable = ({ leagueId, currentUser }) => {
                         </tbody>
                     </table>
                 </div>
-            ) : !isGroupFormat ? (
-                /* 🏆 PATH A: Standard Classic League/Knockout master full table list row */
+            ) : tournamentFormat === 'group_knockout' ? (
+                /* ⭐ PATH B: Advanced Group Stage Visual Partitions Grid (World Cup Style Split) */
+                (() => {
+                    // Programmatically sort standings rows into independent group buckets
+                    const groupSegments = {};
+                    
+                    // Fallback chunker balancing slots if groupLabel string keys haven't synced yet
+                    standings.forEach((row, idx) => {
+                        let label = row.groupLabel;
+                        if (!label) {
+                            // Balanced partition selector fallback for clean initial empty views
+                            label = idx < Math.ceil(standings.length / 2) ? 'Group A' : 'Group B';
+                        }
+                        if (!groupSegments[label]) groupSegments[label] = [];
+                        groupSegments[label].push(row);
+                    });
+
+                    const parsedGroupTitles = Object.keys(groupSegments).sort();
+
+                    return (
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start animate-in fade-in duration-200">
+                            {parsedGroupTitles.map((title) => (
+                                <div key={title} className="bg-[#0b0e14] border border-slate-800/80 rounded-2xl p-4 sm:p-5 space-y-4 shadow-xl">
+                                    <div className="flex items-center justify-between border-b border-slate-800/50 pb-3">
+                                        <h4 className="text-sm font-black text-white uppercase tracking-tight flex items-center gap-2">
+                                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                                            Tournament {title}
+                                        </h4>
+                                        <span className="text-[9px] bg-emerald-400/10 text-emerald-400 border border-emerald-400/20 px-2 py-0.5 rounded font-bold uppercase tracking-wider">
+                                            Top 2 Advance
+                                        </span>
+                                    </div>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left border-collapse text-xs sm:text-sm">
+                                            <thead>
+                                                <tr className="text-slate-500 text-[10px] uppercase font-bold tracking-wider border-b border-slate-900 pb-2">
+                                                    <th className="pb-2 w-10">Pos</th>
+                                                    <th className="pb-2">Manager</th>
+                                                    <th className="pb-2 text-center w-12">P</th>
+                                                    <th className="pb-2 text-center w-14">GD</th>
+                                                    <th className="pb-2 text-center w-14 font-black text-emerald-400">PTS</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-900/60 font-medium text-slate-300">
+                                                {groupSegments[title].map((row, index) => {
+                                                    const rank = index + 1;
+                                                    const isQualifier = rank <= 2;
+                                                    const isMe = isCurrentUserRow(row);
+
+                                                    return (
+                                                        <tr 
+                                                            key={row.playerId || index}
+                                                            onClick={() => isMe && handleRowClick(row)}
+                                                            className={`hover:bg-slate-900/20 transition-colors ${isMe ? 'bg-cyan-400/[0.02] cursor-pointer' : ''}`}
+                                                        >
+                                                            <td className={`py-2.5 font-mono font-black ${isQualifier ? 'text-emerald-400' : 'text-slate-600'}`}>
+                                                                {rank}
+                                                            </td>
+                                                            <td className="py-2.5 font-bold text-white max-w-[140px] truncate">
+                                                                <span className="flex items-center gap-1.5 truncate">
+                                                                    {isQualifier && <span className="text-emerald-400 text-[10px]">⭐</span>}
+                                                                    <span className={isMe ? 'text-cyan-400' : ''}>@{row.username}</span>
+                                                                </span>
+                                                            </td>
+                                                            <td className="py-2.5 text-center font-mono text-slate-400">{row.played}</td>
+                                                            <td className={`py-2.5 text-center font-mono ${row.goalDifference > 0 ? 'text-[#a3e635]' : row.goalDifference < 0 ? 'text-rose-400/80' : 'text-slate-500'}`}>
+                                                                {row.goalDifference > 0 ? `+${row.goalDifference}` : row.goalDifference}
+                                                            </td>
+                                                            <td className={`py-2.5 text-center font-mono font-black ${isQualifier ? 'text-emerald-400 text-sm sm:text-base' : 'text-slate-400'}`}>
+                                                                {row.points}
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    );
+                })()
+            ) : (
+                /* 🏆 PATH A: Standard Classic Full Table List View */
                 <div className="overflow-x-auto rounded-xl">
                     <table className={`w-full text-left border-collapse ${viewMode === 'short' ? 'min-w-0' : 'min-w-[640px]'}`}>
                         <thead>
@@ -318,88 +409,13 @@ const LeagueTable = ({ leagueId, currentUser }) => {
                         </tbody>
                     </table>
                 </div>
-            ) : (
-                /* ⭐ PATH B: Advanced Group Stage Visual Partitions Grid (UCL / World Cup formatting) */
-                (() => {
-                    const groupSegments = {};
-                    standings.forEach(row => {
-                        const label = row.groupLabel || 'Group A';
-                        if (!groupSegments[label]) groupSegments[label] = [];
-                        groupSegments[label].push(row);
-                    });
-
-                    const parsedGroupTitles = Object.keys(groupSegments).sort();
-
-                    return (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-                            {parsedGroupTitles.map((title) => (
-                                <div key={title} className="bg-[#0b0e14] border border-slate-800/80 rounded-2xl p-4 sm:p-5 space-y-4 shadow-xl">
-                                    <div className="flex items-center justify-between border-b border-slate-800/50 pb-3">
-                                        <h4 className="text-sm font-black text-white uppercase tracking-tight flex items-center gap-2">
-                                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                                            Tournament {title}
-                                        </h4>
-                                        <span className="text-[9px] bg-emerald-400/10 text-emerald-400 border border-emerald-400/20 px-2 py-0.5 rounded font-bold uppercase tracking-wider">
-                                            Top 2 Advance
-                                        </span>
-                                    </div>
-                                    <div className="overflow-x-auto">
-                                        <table className="w-full text-left border-collapse text-xs sm:text-sm">
-                                            <thead>
-                                                <tr className="text-slate-500 text-[10px] uppercase font-bold tracking-wider border-b border-slate-900 pb-2">
-                                                    <th className="pb-2 w-10">Pos</th>
-                                                    <th className="pb-2">Manager</th>
-                                                    <th className="pb-2 text-center w-12">P</th>
-                                                    <th className="pb-2 text-center w-14">GD</th>
-                                                    <th className="pb-2 text-center w-14 font-black text-emerald-400">PTS</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-slate-900/60 font-medium text-slate-300">
-                                                {groupSegments[title].map((row, index) => {
-                                                    const rank = index + 1;
-                                                    const isQualifier = rank <= 2;
-                                                    const isMe = isCurrentUserRow(row);
-
-                                                    return (
-                                                        <tr 
-                                                            key={row.playerId || index}
-                                                            onClick={() => isMe && handleRowClick(row)}
-                                                            className={`hover:bg-slate-900/20 transition-colors ${isMe ? 'bg-cyan-400/[0.02] cursor-pointer' : ''}`}
-                                                        >
-                                                            <td className={`py-2.5 font-mono font-black ${isQualifier ? 'text-emerald-400' : 'text-slate-600'}`}>
-                                                                {rank}
-                                                            </td>
-                                                            <td className="py-2.5 font-bold text-white max-w-[140px] truncate">
-                                                                <span className="flex items-center gap-1.5 truncate">
-                                                                    {isQualifier && <span className="text-emerald-400 text-[10px]">⭐</span>}
-                                                                    <span className={isMe ? 'text-cyan-400' : ''}>@{row.username}</span>
-                                                                </span>
-                                                            </td>
-                                                            <td className="py-2.5 text-center font-mono text-slate-400">{row.played}</td>
-                                                            <td className={`py-2.5 text-center font-mono ${row.goalDifference > 0 ? 'text-[#a3e635]' : row.goalDifference < 0 ? 'text-rose-400/80' : 'text-slate-500'}`}>
-                                                                {row.goalDifference > 0 ? `+${row.goalDifference}` : row.goalDifference}
-                                                            </td>
-                                                            <td className={`py-2.5 text-center font-mono font-black ${isQualifier ? 'text-emerald-400 text-sm sm:text-base' : 'text-slate-400'}`}>
-                                                                {row.points}
-                                                            </td>
-                                                        </tr>
-                                                    );
-                                                })}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    );
-                })()
             )}
 
             {standings.length > 0 && (
                 <div className="flex flex-wrap items-center justify-center gap-6 pt-2 border-t border-slate-900 text-[10px] uppercase font-bold text-slate-500 tracking-widest">
                     <div className="flex items-center gap-2">
-                        <div className={`w-3 h-3 rounded border ${tournamentFormat === 'knockout' ? 'bg-emerald-400/20 border-emerald-400/40' : 'bg-[#a3e635]/20 border-[#a3e635]/40'}`}></div>
-                        <span>{tournamentFormat === 'knockout' ? 'Active Bracket' : isGroupFormat ? 'Group Leaders' : '1st Place'}</span>
+                        <div className={`w-3 h-3 rounded border ${tournamentFormat === 'knockout' ? 'bg-amber-400/20 border-amber-400/40' : 'bg-[#a3e635]/20 border-[#a3e635]/40'}`}></div>
+                        <span>{tournamentFormat === 'knockout' ? 'Active Bracket' : tournamentFormat === 'group_knockout' ? 'Group Leaders' : '1st Place'}</span>
                     </div>
                     <div className="flex items-center gap-2">
                         <div className="w-3 h-3 rounded bg-cyan-400/20 border border-cyan-400/40"></div>

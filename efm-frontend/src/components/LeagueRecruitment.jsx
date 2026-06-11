@@ -13,7 +13,11 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey })
     const [isReserving, setIsReserving] = useState(false); 
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
-    const [filter, setFilter] = useState('all');
+    
+    // Core Filter States
+    const [filter, setFilter] = useState('all'); // 'all', 'recruiting', 'active'
+    const [formatFilter, setFormatFilter] = useState('all'); // 'all', 'classic', 'knockout', 'group_knockout'
+    
     const [userBookingState, setUserBookingState] = useState(currentUser?.hasBookedUpcoming || false);
 
     // MODAL STATE ENGINE
@@ -106,9 +110,7 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey })
         }
     };
 
-    // INTERCEPT ACTION: Show mandatory scrolling rules before navigating to standings
     const handleViewStandingsClick = (league, hasJoined) => {
-        // FIXED: Checks if the user has joined OR if the target league status is officially full and active!
         if (hasJoined || league.status === 'active') {
             setRulesModal({ isOpen: true, league, targetAction: 'standings' });
         } else {
@@ -116,12 +118,10 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey })
         }
     };
 
-    // PROCEED ACTION: Triggered only after user scrolls and closes rules modal
     const executeRulesAcknowledge = () => {
         const { league, targetAction } = rulesModal;
         setRulesModal({ isOpen: false, league: null, targetAction: null });
         
-        // 🚀 FIXED: Appended structural format tags to the final pipeline redirection link
         if (targetAction === 'standings' && onViewLeague && league) {
             onViewLeague(league._id, 'standings', league.tournamentFormat);
         }
@@ -131,9 +131,21 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey })
         return Math.round((filled / total) * 100);
     };
 
-    const filteredLeagues = filter === 'all' 
-        ? leagues 
-        : leagues.filter(l => l.status === filter);
+    // 🚀 DUAL LAYER DYNAMIC FILTER HOOK:
+    const filteredLeagues = leagues.filter(l => {
+        const matchesStatus = filter === 'all' || l.status === filter;
+        
+        const formatClean = String(l.tournamentFormat || 'classic').trim().toLowerCase();
+        let resolvedFormat = 'classic';
+        if (formatClean === 'knockout') resolvedFormat = 'knockout';
+        if (formatClean === 'group_knockout' || formatClean.includes('pool') || formatClean.includes('group')) {
+            resolvedFormat = 'group_knockout';
+        }
+
+        const matchesFormat = formatFilter === 'all' || resolvedFormat === formatFilter;
+
+        return matchesStatus && matchesFormat;
+    });
 
     const areAllLeaguesFull = leagues.length > 0 && leagues.every(l => l.slotsFilled >= l.capacity);
 
@@ -162,38 +174,82 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey })
                 </div>
             )}
 
-            {/* --- FILTER CONTROL CONTROLLERS --- */}
-            <div className="flex items-center gap-3">
-                <button
-                    onClick={() => setFilter('all')}
-                    className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all border ${
-                        filter === 'all'
-                            ? 'bg-cyan-400 text-slate-950 border-cyan-400'
-                            : 'bg-[#0f131c] text-slate-400 border-slate-800 hover:border-cyan-500/30'
-                    }`}
-                >
-                    All
-                </button>
-                <button
-                    onClick={() => setFilter('recruiting')}
-                    className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all border ${
-                        filter === 'recruiting'
-                            ? 'bg-cyan-400 text-slate-950 border-cyan-400'
-                            : 'bg-[#0f131c] text-slate-400 border-slate-800 hover:border-cyan-500/30'
-                    }`}
-                >
-                    Recruiting
-                </button>
-                <button
-                    onClick={() => setFilter('active')}
-                    className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all border ${
-                        filter === 'active'
-                            ? 'bg-gradient-to-r from-emerald-500 to-[#a3e635] text-slate-950 border-emerald-400'
-                            : 'bg-[#0f131c] text-slate-400 border-slate-800 hover:border-[#a3e635]/30'
-                    }`}
-                >
-                    Active
-                </button>
+            {/* --- FILTER CONTROL HUD OVERLAY --- */}
+            <div className="space-y-3 bg-[#070a0f] border border-slate-900 p-4 rounded-2xl shadow-xl">
+                
+                {/* CAMPAIGN STATUS CONTROL ROW */}
+                <div className="flex flex-col gap-1.5">
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 font-mono">Campaign Status:</label>
+                    <div className="flex items-center gap-3">
+                        <button
+                            onClick={() => setFilter('all')}
+                            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all border ${
+                                filter === 'all' ? 'bg-cyan-400 text-slate-950 border-cyan-400 font-extrabold' : 'bg-[#0f131c] text-slate-400 border-slate-800 hover:border-cyan-500/30'
+                            }`}
+                        >
+                            All
+                        </button>
+                        <button
+                            onClick={() => setFilter('recruiting')}
+                            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all border ${
+                                filter === 'recruiting' ? 'bg-cyan-400 text-slate-950 border-cyan-400 font-extrabold' : 'bg-[#0f131c] text-slate-400 border-slate-800 hover:border-cyan-500/30'
+                            }`}
+                        >
+                            Recruiting
+                        </button>
+                        <button
+                            onClick={() => setFilter('active')}
+                            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all border ${
+                                filter === 'active' ? 'bg-gradient-to-r from-emerald-500 to-[#a3e635] text-slate-950 border-emerald-400 font-extrabold' : 'bg-[#0f131c] text-slate-400 border-slate-800 hover:border-[#a3e635]/30'
+                            }`}
+                        >
+                            Active
+                        </button>
+                    </div>
+                </div>
+
+                {/* 🚀 TOURNAMENT STYLE LAYOUT FORMAT FILTERS PANEL */}
+                <div className="flex flex-col gap-1.5 pt-2 border-t border-slate-900/60">
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 font-mono">Tournament Rules Format:</label>
+                    
+                    {/* 📱 Mobile Dropdown Switch Select Selector Container (Hidden on Desktop) */}
+                    <div className="block sm:hidden w-full relative">
+                        <select
+                            value={formatFilter}
+                            onChange={(e) => setFormatFilter(e.target.value)}
+                            className="w-full bg-[#0f131c] border border-slate-800 text-cyan-400 font-black font-mono text-xs px-4 py-3 rounded-xl focus:outline-none appearance-none"
+                        >
+                            <option value="all">📊 ALL SCHEDULERS</option>
+                            <option value="classic">🏆 LEAGUE SYSTEM</option>
+                            <option value="knockout">🪓 PURE KNOCKOUT</option>
+                            <option value="group_knockout">⭐ POOLS + CUP</option>
+                        </select>
+                        <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-cyan-400 text-xs font-mono font-black">▼</div>
+                    </div>
+
+                    {/* 💻 Desktop Inline Navigation Row Buttons HUD (Hidden on Mobile) */}
+                    <div className="hidden sm:flex flex-wrap items-center gap-2">
+                        {[
+                            { key: 'all', label: '📊 All Formats' },
+                            { key: 'classic', label: '🏆 League' },
+                            { key: 'knockout', label: '🪓 Knockout' },
+                            { key: 'group_knockout', label: '⭐ Pools + Cup' }
+                        ].map((fmt) => (
+                            <button
+                                key={fmt.key}
+                                onClick={() => setFormatFilter(fmt.key)}
+                                className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all border shrink-0 ${
+                                    formatFilter === fmt.key
+                                        ? 'bg-slate-800 border-slate-700 text-cyan-400 font-black shadow-inner'
+                                        : 'bg-[#0f131c] text-slate-400 border-slate-900/60 hover:text-slate-200'
+                                }`}
+                            >
+                                {fmt.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
             </div>
 
             {areAllLeaguesFull && (
@@ -223,10 +279,10 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey })
             )}
 
             {filteredLeagues.length === 0 ? (
-                <div className="text-center py-16">
-                    <div className="text-slate-500 text-6xl mb-4">🏆</div>
-                    <h3 className="text-xl font-bold text-white mb-2">No Leagues Found</h3>
-                    <p className="text-slate-400 text-sm">No leagues match the selected filter.</p>
+                <div className="text-center py-16 bg-[#0f131c]/40 rounded-3xl border border-dashed border-slate-900 max-w-md mx-auto">
+                    <div className="text-slate-500 text-5xl mb-2">🔍</div>
+                    <h3 className="text-md font-bold text-white mb-1">No Leagues Match Criteria</h3>
+                    <p className="text-slate-400 text-xs">Adjust your status or tournament format filters above.</p>
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -244,7 +300,7 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey })
                                 <div className="space-y-4">
                                     <div className="space-y-2">
                                         <div className="flex items-start justify-between gap-2">
-                                            <h4 className="text-lg font-black text-white tracking-tight group-hover:text-cyan-400 transition-colors max-w-[75%]">
+                                            <h4 className="text-lg font-black text-white tracking-tight group-hover:text-cyan-400 transition-colors max-w-[75%] truncate">
                                                 {league.name}
                                             </h4>
                                             
@@ -278,8 +334,7 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey })
                                             <span className="bg-slate-800/80 text-slate-300 px-2 py-0.5 rounded-md border border-slate-700">
                                                 Max STR: {league.maxStrengthLimit || 'Any'}
                                             </span>
-                                            {/* 🚀 NEW: Added an explicit format layout tracking label onto the card deck component layout */}
-                                            <span className="bg-slate-800/80 text-cyan-400 px-2 py-0.5 rounded-md border border-slate-700 font-extrabold">
+                                            <span className="bg-slate-800/80 text-cyan-400 px-2 py-0.5 rounded-md border border-slate-700 font-extrabold font-mono">
                                                 {league.tournamentFormat === 'knockout' ? '🪓 Knockout' : league.tournamentFormat === 'group_knockout' ? '⭐ Pools + Cup' : '🏆 Classic'}
                                             </span>
                                         </div>
@@ -303,14 +358,14 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey })
                                     </div>
 
                                     {league.status === 'active' && (
-                                        <div className="flex items-center gap-2 text-xs text-slate-400">
+                                        <div className="flex items-center gap-2 text-xs text-slate-400 font-mono">
                                             <span className="w-1.5 h-1.5 bg-[#a3e635] rounded-full animate-pulse"></span>
                                             Matchday {league.currentMatchday || 1} in progress
                                         </div>
                                     )}
                                 </div>
 
-                                <div className="pt-2">
+                                <div className="pt-4">
                                     {league.status === 'recruiting' && !isFull ? (
                                         <button
                                             onClick={() => handleJoinBracket(league._id)}
@@ -357,7 +412,6 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey })
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
                     <div className="w-full max-w-xl bg-[#121824] border border-slate-800 rounded-3xl shadow-2xl flex flex-col max-h-[85vh] animate-scale-up">
                         
-                        {/* Modal Sticky Top Header */}
                         <div className="p-6 border-b border-slate-800 flex items-center justify-between bg-[#161d2b] rounded-t-3xl">
                             <div className="space-y-1">
                                 <span className="text-[10px] font-black tracking-widest text-cyan-400 uppercase bg-cyan-500/10 px-2.5 py-1 rounded-md border border-cyan-500/20">
@@ -369,10 +423,7 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey })
                             </div>
                         </div>
 
-                        {/* Scrollable Rules Engine Base Body */}
                         <div className="p-6 overflow-y-auto space-y-6 text-sm text-slate-300 custom-scrollbar flex-1">
-                            
-                            {/* Custom Tournament Rules */}
                             {rulesModal.league.rules ? (
                                 <div className="bg-cyan-500/5 border border-cyan-500/20 rounded-xl p-4 space-y-2">
                                     <h5 className="text-xs font-bold text-cyan-400 uppercase tracking-widest flex items-center gap-2">
@@ -384,28 +435,32 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey })
                                 </div>
                             ) : null}
 
-                            {/* Schedule & Timing Segment */}
                             <div className="bg-[#0b0f17] border border-slate-800/60 rounded-xl p-4 space-y-3">
                                 <h5 className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
                                     📅 Season Timeline & Launch
                                 </h5>
                                 <div className="text-xs text-slate-300 space-y-1.5 font-medium">
-                                    <p>• <span className="text-white font-bold">Start Date:</span> Matches begin immediately once bracket filling concludes.</p>
+                                    <ppx>• <span className="text-white font-bold">Start Date:</span> Matches begin immediately once bracket filling concludes.</ppx>
                                     <p>• <span className="text-white font-bold">Matchday Speed:</span> Managers get designated windows per round to finish pairings.</p>
                                     <p>• <span className="text-white font-bold">Status:</span> This league is currently <span className="text-cyan-400 font-bold uppercase">{rulesModal.league.status}</span>.</p>
                                 </div>
                             </div>
 
-                            {/* Core Requirements Section */}
                             <div className="space-y-3">
                                 <h5 className="text-xs font-bold text-slate-400 uppercase tracking-widest">
                                     🎮 Gameplay Instructions & Squad Limits
                                 </h5>
                                 <ul className="space-y-2 text-xs font-medium text-slate-400 list-none pl-0">
-                                    <li className="flex items-start gap-2">
-                                        <span className="text-cyan-400 mt-0.5">✔</span>
-                                        <span><strong className="text-slate-200">Team Strength Cap:</strong> Your active active squad ratings must strictly stay within <span className="text-cyan-400 font-bold">Max STR: {rulesModal.league.maxStrengthLimit || 'Unlimited'}</span> limits.</span>
-                                    </li>
+                                   <li className="flex items-start gap-2">
+    <span className="text-cyan-400 mt-0.5">✔</span>
+    <span>
+        <strong className="text-slate-200">Team Strength Cap:</strong> Your active squad ratings must strictly stay within{' '}
+        <span className="text-cyan-400 font-bold">
+            Max STR: {rulesModal.league.maxStrengthLimit || 'Unlimited'}
+        </span>{' '}
+        limits.
+    </span>
+</li>
                                     <li className="flex items-start gap-2">
                                         <span className="text-cyan-400 mt-0.5">✔</span>
                                         <span><strong className="text-slate-200">Result Submission:</strong> Both managers are expected to upload screenshots or match confirmations via the Matchday Hub interface promptly.</span>
@@ -417,18 +472,16 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey })
                                 </ul>
                             </div>
 
-                            {/* Behavioral & Fairplay Code */}
                             <div className="space-y-3">
                                 <h5 className="text-xs font-bold text-slate-400 uppercase tracking-widest">
                                     🚨 Fairplay & Opponent Coordination
                                 </h5>
                                 <p className="text-xs text-slate-400 leading-relaxed">
-                                    Click your row inside the standings tracker board to access your opponent's dynamic WhatsApp direct chat module. Managers who display toxicity, deliberate delays, or input fake data metrics face immediate unassigned slot eviction and bans from upcoming master bracket registrations.
+                                    Click your row inside the standings tracker board to access your opponent's dynamic WhatsApp direct chat module. Managers who display toxicity, deliberate delays, or input fake data metrics face immediate eviction and bans from upcoming registrations.
                                 </p>
                             </div>
                         </div>
 
-                        {/* Sticky Bottom Actions Layout */}
                         <div className="p-4 bg-[#0b0f17] border-t border-slate-800 rounded-b-3xl flex justify-end">
                             <button
                                 onClick={rulesModal.targetAction === 'standings' ? executeRulesAcknowledge : () => setRulesModal({ isOpen: false, league: null, targetAction: null })}

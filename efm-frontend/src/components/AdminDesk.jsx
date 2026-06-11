@@ -57,7 +57,7 @@ const AdminDesk = ({ leagueId, onSelectLeague }) => {
         }
     };
 
-    const fetchDisputedFixtures = async () => {
+ const fetchDisputedFixtures = async () => {
         if (!leagueId) {
             setDisputedFixtures([]);
             setLoading(false);
@@ -66,16 +66,25 @@ const AdminDesk = ({ leagueId, onSelectLeague }) => {
         try {
             const fixturesRes = await axios.get(`${API_BASE_URL}/leagues/${leagueId}/fixtures`);
             if (fixturesRes.data.success) {
-                // Captures both true player disputes AND stalled pending matches for total walkover override support
+                // 🚀 FIXED: Filter out completed 'confirmed' matches so they disappear when resolved!
+                // We only grab matches that are actively broken, waiting for user action, or disputed.
                 const administrativeTargets = fixturesRes.data.data.filter(
-                    f => f.status === 'disputed' || f.status === 'pending'
+                    f => f.status === 'disputed' || f.status === 'pending' || f.status === 'awaiting_confirmation'
                 );
+                
                 setDisputedFixtures(administrativeTargets);
 
-                // 🚀 NEW: Dynamically set default view to the lowest active matchday if it hasn't been chosen yet
-                if (administrativeTargets.length > 0 && selectedMatchday === 'all') {
+                // 🚀 FIXED: Re-verify matchday dropdown state boundary limits safely
+                if (administrativeTargets.length > 0) {
                     const dynamicMatchdays = [...new Set(administrativeTargets.map(f => f.matchday))].sort((a, b) => a - b);
-                    setSelectedMatchday(dynamicMatchdays[0].toString());
+                    
+                    // Only override selector state if current choice is unmapped or 'all' defaults
+                    if (selectedMatchday === 'all' && dynamicMatchdays[0] !== undefined) {
+                        setSelectedMatchday(dynamicMatchdays[0].toString());
+                    }
+                } else {
+                    // Fallback to display everything if the unresolved active queue clears down to 0
+                    setSelectedMatchday('all');
                 }
             }
         } catch (err) {

@@ -72,13 +72,10 @@ const MatchdayHub = ({ leagueId: initialLeagueId, currentUser }) => {
             if (res.data.success) {
                 setFixtures(res.data.data);
                 if (res.data.data.length > 0) {
-                    // Pull current scheduled matchday fallback marker
-                    const targetMatchday = res.data.data[0].leagueMatchday || res.data.data[0].matchday;
-                    
-                    // 🚀 SAFETY GUARD: If active matchday selection exceeds new max limits, drop selector safely back to 1
-                    const uniqueMDs = [...new Set(res.data.data.map(f => f.matchday))];
+                    // 🚀 SAFETY GUARD: If active matchday selection exceeds new max limits, drop selector safely back to first entry
+                    const uniqueMDs = [...new Set(res.data.data.map(f => f.matchday))].sort((a, b) => a - b);
                     if (!uniqueMDs.includes(activeMatchday)) {
-                        setActiveMatchday(1);
+                        setActiveMatchday(uniqueMDs[0] || 1);
                     }
                 }
             }
@@ -194,7 +191,6 @@ const MatchdayHub = ({ leagueId: initialLeagueId, currentUser }) => {
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">
                             Active Involvements — Select Campaign Deck
                         </label>
-                        {/* 🚀 REFRESH LIFELINE: Added a button to manually trigger a sync without standard page reloads */}
                         <button 
                             onClick={() => { fetchUserLeagues(true); if (selectedLeagueId) fetchFixtures(selectedLeagueId); }}
                             className="text-[10px] text-cyan-400 hover:underline font-mono font-bold"
@@ -202,7 +198,27 @@ const MatchdayHub = ({ leagueId: initialLeagueId, currentUser }) => {
                             🔄 Sync Board
                         </button>
                     </div>
-                    <div className="flex items-center gap-2 flex-wrap">
+
+                    {/* 📱 MOBILE CAMPAIGN SELECT DROPDOWN (Hidden on Desktop) */}
+                    <div className="block sm:hidden w-full">
+                        <select
+                            value={selectedLeagueId || ''}
+                            onChange={(e) => {
+                                const targetId = e.target.value;
+                                setSelectedLeagueId(targetId);
+                                const found = userLeagues.find(l => l._id === targetId);
+                                if (found) setActiveLeague(found);
+                            }}
+                            className="w-full bg-[#070a0f] border border-slate-800 text-cyan-400 font-black font-sans text-sm px-4 py-2.5 rounded-xl focus:outline-none"
+                        >
+                            {userLeagues.map((league) => (
+                                <option key={league._id} value={league._id}>🏆 {league.name}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* 💻 DESKTOP CAMPAIGN TABS ROW (Hidden on Mobile) */}
+                    <div className="hidden sm:flex items-center gap-2 flex-wrap">
                         {userLeagues.map((league) => (
                             <button
                                 key={league._id}
@@ -255,7 +271,24 @@ const MatchdayHub = ({ leagueId: initialLeagueId, currentUser }) => {
             ) : (
                 <>
                     {/* --- MATCHDAY GAME WEEK NAVIGATION HUD --- */}
-                    <div className="flex items-center gap-2.5 overflow-x-auto pb-2 border-b border-slate-800/40 custom-scrollbar">
+                    {/* 📱 MOBILE DROPDOWN SELECT SELECTOR */}
+                    <div className="sm:hidden w-full bg-[#0f131c] border border-slate-800 p-3 rounded-2xl flex items-center justify-between gap-3 shadow-inner">
+                        <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider font-mono shrink-0">
+                            Jump to Round:
+                        </label>
+                        <select
+                            value={activeMatchday}
+                            onChange={(e) => { setActiveMatchday(Number(e.target.value)); setError(''); }}
+                            className="flex-1 bg-[#070a0f] border border-slate-800 text-cyan-400 font-black font-mono text-sm px-4 py-2.5 rounded-xl focus:outline-none focus:border-cyan-500 transition-all cursor-pointer"
+                        >
+                            {uniqueMatchdays.map((md) => (
+                                <option key={md} value={md}>Matchday {md}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* 💻 DESKTOP HORIZONTAL ROW BUTTONS HUD */}
+                    <div className="hidden sm:flex items-center gap-2.5 overflow-x-auto pb-2 border-b border-slate-800/40 custom-scrollbar">
                         {uniqueMatchdays.map((md) => (
                             <button
                                 key={md}
@@ -275,21 +308,40 @@ const MatchdayHub = ({ leagueId: initialLeagueId, currentUser }) => {
                     <div className="space-y-3">
                         {matchdays[activeMatchday] && matchdays[activeMatchday].length > 0 ? (
                             (() => {
-                                // 🚀 CHECK GLOBAL CALENDAR COMPLETION:
-                                // Scan your state fixtures array to check if any prior gameweeks have incomplete records
+                                const userFixtureInRound = matchdays[activeMatchday].find(f => {
+                                    const idA = f.playerA?._id || f.playerA;
+                                    const idB = f.playerB?._id || f.playerB;
+                                    return idA === currentUserId || idB === currentUserId;
+                                });
+
+                                const activeUserGroupLabel = userFixtureInRound?.groupLabel || null;
+
+                                const displayableFixtures = matchdays[activeMatchday].filter(f => {
+                                    if (f.stageType === 'group_stage' && activeUserGroupLabel) {
+                                        return f.groupLabel === activeUserGroupLabel;
+                                    }
+                                    return true; 
+                                });
+
                                 const isPreviousRoundIncomplete = fixtures.some(
                                     f => f.matchday < activeMatchday && f.status !== 'confirmed'
                                 );
 
+                                if (displayableFixtures.length === 0) {
+                                    return (
+                                        <p className="text-center text-slate-500 text-xs py-8 bg-[#0f131c]/20 rounded-2xl border border-dashed border-slate-800/60">
+                                            No matches scheduled for your Group Pool this matchday.
+                                        </p>
+                                    );
+                                }
+
                                 return (
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        {matchdays[activeMatchday].map((fixture) => {
+                                        {displayableFixtures.map((fixture) => {
                                             const playerA = fixture.playerA?._id ? fixture.playerA : { _id: fixture.playerA, username: 'Unregistered Player' };
                                             const playerB = fixture.playerB?._id ? fixture.playerB : { _id: fixture.playerB, username: 'Unregistered Player' };
 
                                             const isCurrentMatch = currentUserId && (playerA._id === currentUserId || playerB._id === currentUserId);
-                                            
-                                            // 🚀 GATING TARGET: Only open modal clicks if the game is yours AND no previous week backlog exists
                                             const isActionable = isCurrentMatch && !isPreviousRoundIncomplete && fixture.status !== 'confirmed';
 
                                             return (
@@ -300,7 +352,7 @@ const MatchdayHub = ({ leagueId: initialLeagueId, currentUser }) => {
                                                         fixture.status === 'confirmed'
                                                             ? 'border-slate-800/60 opacity-60'
                                                             : isPreviousRoundIncomplete
-                                                            ? 'border-slate-900/40 opacity-40 cursor-not-allowed select-none bg-slate-950/[0.2]' // 🔒 Visual Locked State
+                                                            ? 'border-slate-900/40 opacity-40 cursor-not-allowed select-none bg-slate-950/[0.2]' 
                                                             : fixture.status === 'disputed'
                                                             ? 'border-rose-500/30 hover:border-rose-400 cursor-pointer bg-rose-500/[0.01]'
                                                             : isCurrentMatch
@@ -309,14 +361,23 @@ const MatchdayHub = ({ leagueId: initialLeagueId, currentUser }) => {
                                                     }`}
                                                 >
                                                     <div className="flex items-center justify-between gap-2">
-                                                        <span className="text-[10px] font-black text-slate-500 tracking-wider font-mono">
-                                                            {activeLeague?.name?.toUpperCase()} • ROUND {fixture.matchday}
-                                                        </span>
-                                                        {getStatusBadge(fixture.status)}
-                                                    </div>
+    {/* 🚀 THE IMMUNE DETECTOR BADGE: */}
+    <span className="text-[10px] font-black uppercase tracking-wider text-cyan-400 bg-cyan-500/5 px-2.5 py-1 rounded-md border border-cyan-500/10 font-mono">
+        {fixture.stageType === 'group_stage' 
+            ? `GROUP ${fixture.groupLabel || 'A'} • RD ${fixture.matchday}`
+            : fixture.stageType === 'knockout_stage' && fixture.roundName
+            ? fixture.roundName.toUpperCase()
+            : activeLeague?.tournamentFormat === 'classic' || (!fixture.stageType && !fixture.roundName)
+            ? `LEAGUE • MATCHDAY ${fixture.matchday}` // 🚀 Bulletproof fallback for standard leagues
+            : `KNOCKOUT • RD ${fixture.matchday}`
+        }
+    </span>
+
+    {getStatusBadge(fixture.status)}
+</div>
 
                                                     <div className="space-y-3">
-                                                        {/* Player A Info & Score */}
+                                                        {/* Player A */}
                                                         <div className="flex items-center justify-between">
                                                             <div className="flex items-center gap-3 min-w-0">
                                                                 <div className="w-7 h-7 rounded-lg bg-cyan-400/10 flex items-center justify-center text-xs font-black text-cyan-400 border border-cyan-400/10 shrink-0">
@@ -334,7 +395,7 @@ const MatchdayHub = ({ leagueId: initialLeagueId, currentUser }) => {
                                                             )}
                                                         </div>
 
-                                                        {/* Player B Info & Score */}
+                                                        {/* Player B */}
                                                         <div className="flex items-center justify-between">
                                                             <div className="flex items-center gap-3 min-w-0">
                                                                 <div className="w-7 h-7 rounded-lg bg-amber-400/10 flex items-center justify-center text-xs font-black text-amber-400 border border-amber-400/10 shrink-0">
@@ -353,7 +414,7 @@ const MatchdayHub = ({ leagueId: initialLeagueId, currentUser }) => {
                                                         </div>
                                                     </div>
 
-                                                    {/* 🚀 MUTATED INTELLIGENT FOOTER FEEDBACK BAR */}
+                                                    {/* Action Footer Feed */}
                                                     {fixture.status !== 'confirmed' && isCurrentMatch && (
                                                         <div className="pt-2.5 border-t border-slate-900/60 flex items-center justify-center gap-1.5 text-[10px] font-black uppercase tracking-wider transition-colors">
                                                             {isPreviousRoundIncomplete ? (

@@ -11,6 +11,17 @@ const FixtureSchema = new mongoose.Schema({
         type: Number,
         required: true // e.g., Matchday 1, Matchday 2...
     },
+    // 🚀 NEW: Schema explicitly authorizes dynamic stage configurations tags tracking
+    stageType: {
+        type: String,
+        enum: ['group_stage', 'knockout_stage'],
+        default: 'group_stage'
+    },
+    // 🚀 NEW: Schema explicitly authorizes round-robin group letter bindings
+    groupLabel: {
+        type: String,
+        default: null // Will hold raw string markers like 'A', 'B', 'C', 'D'
+    },
     playerA: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
@@ -37,6 +48,10 @@ const FixtureSchema = new mongoose.Schema({
         type: Number,
         default: null // Track individual entry for verification
     },
+    roundName:
+     {
+         type: String, default: ''
+ },
     status: {
         type: String,
         enum: ['pending', 'awaiting_confirmation', 'confirmed', 'disputed'],

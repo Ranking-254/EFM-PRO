@@ -36,7 +36,6 @@ const generateClassicLeague = (playerIds, totalRounds = 1) => {
                 });
             }
         }
-        // Rotate all elements except the first one to cycle matchups perfectly
         rotationList.splice(1, 0, rotationList.pop());
     }
 
@@ -46,13 +45,11 @@ const generateClassicLeague = (playerIds, totalRounds = 1) => {
 
     for (let leg = 1; leg <= totalRounds; leg++) {
         for (let roundNum = 1; roundNum <= baseRoundsInSingleLeg; roundNum++) {
-            // Extract matches belonging to this specific block sequence
             const dayMatches = baseLegFixtures.filter(f => f.baseMatchday === roundNum);
             
             if (dayMatches.length === 0) continue;
 
             dayMatches.forEach(match => {
-                // If it's an even leg (Leg 2, Leg 4), flip side fields to ensure authentic Home/Away experiences
                 const swapSides = leg % 2 === 0;
 
                 finalizedFixtures.push({
@@ -75,12 +72,8 @@ const generateClassicLeague = (playerIds, totalRounds = 1) => {
 };
 
 /**
- * 🪓 FORMAT B: Knockout Bracket Elimination (Placeholder)
- * Builds dynamic bracket tree structures based on power of 2 sets.
- */
-/**
  * 🪓 FORMAT B: Knockout Bracket Elimination Engine
- * Builds standard single-elimination tournament trees with automated Bye-seeds
+ * Builds standard single-elimination tournament trees with automated dynamic round naming
  * @param {Array} playerIds - Array of MongoDB User Object IDs 
  * @returns {Array} List of initialized pending structural match fixtures
  */
@@ -90,7 +83,7 @@ const generateKnockoutBracket = (playerIds) => {
     let teams = [...playerIds];
     const totalTeamsCount = teams.length;
 
-    // 1. Calculate the next highest power of 2 bracket size (e.g., 6 teams -> bracket size 8)
+    // 1. Calculate the next highest power of 2 bracket size
     let bracketSize = 2;
     while (bracketSize < totalTeamsCount) {
         bracketSize *= 2;
@@ -100,15 +93,24 @@ const generateKnockoutBracket = (playerIds) => {
     let fixtures = [];
     let currentRoundMatchday = 1;
 
+    // Helper to resolve round name dynamically based on match numbers
+    const getRoundLabel = (matchesCount) => {
+        if (matchesCount === 1) return "Finals";
+        if (matchesCount === 2) return "Semifinals";
+        if (matchesCount === 4) return "Quarterfinals";
+        return `Round of ${matchesCount * 2}`;
+    };
+
     // 2. Handle Case A: Perfect power-of-two bracket (No Byes needed)
     if (totalByesCount === 0) {
-        const roundName = bracketSize === 2 ? "Finals" : bracketSize === 4 ? "Semifinals" : bracketSize === 8 ? "Quarterfinals" : "Round of 16";
         const matchesInRound = bracketSize / 2;
+        const roundName = getRoundLabel(matchesInRound);
 
         for (let matchIdx = 0; matchIdx < matchesInRound; matchIdx++) {
             fixtures.push({
                 matchday: currentRoundMatchday,
-                roundName,
+                roundName: roundName, // 🚀 FIXED: Dynamic naming injection
+                stageType: 'knockout_stage',
                 label: `R1_MATCH_${matchIdx + 1}`,
                 playerA: teams[matchIdx * 2],
                 playerB: teams[matchIdx * 2 + 1],
@@ -122,19 +124,21 @@ const generateKnockoutBracket = (playerIds) => {
         return fixtures;
     }
 
-    // 3. Handle Case B: Uneven bracket (e.g., 6 players). Requires a preliminary sorting/qualification round.
-    // Top seeds get BYEs, while lower seeds must play a Quarterfinal elimination matchday first.
-    const playingTeamsCount = totalTeamsCount - totalByesCount; // Number of teams competing in Round 1
+    // 3. Handle Case B: Uneven bracket. Requires preliminary survival matches
+    const playingTeamsCount = totalTeamsCount - totalByesCount; 
     const matchesInRound1 = playingTeamsCount / 2;
 
-    // Slice the lower-seeded players who must compete in Round 1
+    // 🚀 FIXED: Dynamic round calculation for the opening matches based on bracket size limits
+    const roundName = getRoundLabel(bracketSize / 2);
+
     const activeCompetitors = teams.slice(totalByesCount);
 
     for (let i = 0; i < matchesInRound1; i++) {
         fixtures.push({
             matchday: currentRoundMatchday,
-            roundName: "Quarterfinals",
-            label: `QF_MATCH_${i + 1}`,
+            roundName: roundName, // 🚀 FIXED: Assigns proper context context
+            stageType: 'knockout_stage',
+            label: `R1_MATCH_${i + 1}`,
             playerA: activeCompetitors[i * 2],
             playerB: activeCompetitors[i * 2 + 1],
             playerAScore: null,
@@ -144,19 +148,10 @@ const generateKnockoutBracket = (playerIds) => {
             status: 'pending'
         });
     }
-
-    // 💡 Note on Semifinals & Finals Progression: 
-    // Because the opponents depend on who wins the Quarterfinals, the system will dynamically
-    // spin up the empty Semifinal slots (e.g. 'Winner of QF_MATCH_1 vs Bye Seed #1') as soon as 
-    // the admin locks the initial round results!
     
     return fixtures;
 };
 
-/**
- * 🏆 FORMAT C: Group + Knockout (Placeholder)
- * Splits users into sub-groups before sending the top seeds to brackets.
- */
 /**
  * 🏆 FORMAT C: Group + Knockout (Champions League Style Stage 1 Engine)
  * Splits players into micro-groups and generates independent round-robin fixtures for each group.
@@ -170,10 +165,8 @@ const generateGroupAndKnockout = (playerIds, options = { groupsCount: 4 }) => {
     const teams = [...playerIds];
     const numGroups = parseInt(options.groupsCount, 10) || 4;
     
-    // 1. Initialize empty arrays for each group bucket
     let groupBuckets = Array.from({ length: numGroups }, () => []);
     
-    // 2. Distribute players evenly into groups using a snake/round-robin insertion methodology
     teams.forEach((teamId, index) => {
         const groupTargetIndex = index % numGroups;
         groupBuckets[groupTargetIndex].push(teamId);
@@ -182,12 +175,10 @@ const generateGroupAndKnockout = (playerIds, options = { groupsCount: 4 }) => {
     let allGroupFixtures = [];
     const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     
-    // 3. Loop through each group bucket and generate independent round-robin schedules
     groupBuckets.forEach((groupPlayers, groupIdx) => {
         const groupLabel = alphabet[groupIdx] || `Group ${groupIdx + 1}`;
         let list = [...groupPlayers];
         
-        // Handle uneven player counts inside a specific group with an internal BYE slot
         const isOdd = list.length % 2 !== 0;
         if (isOdd) {
             list.push('BYE');
@@ -204,13 +195,13 @@ const generateGroupAndKnockout = (playerIds, options = { groupsCount: 4 }) => {
             
             for (let match = 0; match < matchesPerRound; match++) {
                 const home = rotationList[match];
-                const away = rotationList[numPlayersInGroup - 1 - match];
+                const away = rotationList[rotationList.length - 1 - match];
                 
                 if (home !== 'BYE' && away !== 'BYE') {
                     allGroupFixtures.push({
                         matchday,
                         stageType: 'group_stage',
-                        groupLabel, // 🚀 CRITICAL BINDING tracks group league partitions
+                        groupLabel, 
                         playerA: home,
                         playerB: away,
                         playerAScore: null,
@@ -222,12 +213,10 @@ const generateGroupAndKnockout = (playerIds, options = { groupsCount: 4 }) => {
                 }
             }
             
-            // Cycle matchups via array shift logic
             rotationList.splice(1, 0, rotationList.pop());
         }
     });
     
-    // Sort all matches chronologically by matchday sequence so group matches progress side-by-side
     return allGroupFixtures.sort((a, b) => a.matchday - b.matchday);
 };
 

@@ -18,7 +18,7 @@ const AdminDesk = ({ leagueId, onSelectLeague }) => {
     const [success, setSuccess] = useState('');
     const [leagues, setLeagues] = useState([]);
 
-    // 🚀 NEW: State tracker for current matchday dropdown filter
+    // 🚀 State tracker for current matchday dropdown filter
     const [selectedMatchday, setSelectedMatchday] = useState('all');
 
     const [resolveForm, setResolveForm] = useState({
@@ -57,7 +57,7 @@ const AdminDesk = ({ leagueId, onSelectLeague }) => {
         }
     };
 
- const fetchDisputedFixtures = async () => {
+    const fetchDisputedFixtures = async () => {
         if (!leagueId) {
             setDisputedFixtures([]);
             setLoading(false);
@@ -66,24 +66,18 @@ const AdminDesk = ({ leagueId, onSelectLeague }) => {
         try {
             const fixturesRes = await axios.get(`${API_BASE_URL}/leagues/${leagueId}/fixtures`);
             if (fixturesRes.data.success) {
-                // 🚀 FIXED: Filter out completed 'confirmed' matches so they disappear when resolved!
-                // We only grab matches that are actively broken, waiting for user action, or disputed.
                 const administrativeTargets = fixturesRes.data.data.filter(
                     f => f.status === 'disputed' || f.status === 'pending' || f.status === 'awaiting_confirmation'
                 );
                 
                 setDisputedFixtures(administrativeTargets);
 
-                // 🚀 FIXED: Re-verify matchday dropdown state boundary limits safely
                 if (administrativeTargets.length > 0) {
                     const dynamicMatchdays = [...new Set(administrativeTargets.map(f => f.matchday))].sort((a, b) => a - b);
-                    
-                    // Only override selector state if current choice is unmapped or 'all' defaults
                     if (selectedMatchday === 'all' && dynamicMatchdays[0] !== undefined) {
                         setSelectedMatchday(dynamicMatchdays[0].toString());
                     }
                 } else {
-                    // Fallback to display everything if the unresolved active queue clears down to 0
                     setSelectedMatchday('all');
                 }
             }
@@ -146,10 +140,69 @@ const AdminDesk = ({ leagueId, onSelectLeague }) => {
         setActiveTab('disputes');
     };
 
-    // 🚀 NEW: Dynamic compilation list of unique matchday numbers present in the dataset
+    // 🚀 FIXED: Robust communication logic handles both Object payloads and flat relational text names
+  const handleContactPlayer = async (playerObjOrId, fallbackUsername, isReportingParty = false) => {
+        let lookupKey = null;
+        let displayUsername = fallbackUsername || 'Player';
+
+        if (playerObjOrId && typeof playerObjOrId === 'object') {
+            lookupKey = playerObjOrId._id || playerObjOrId.id;
+            displayUsername = playerObjOrId.username || displayUsername;
+        } else if (typeof playerObjOrId === 'string') {
+            lookupKey = playerObjOrId;
+        }
+
+        if (!lookupKey) {
+            lookupKey = displayUsername;
+        }
+
+        try {
+            const res = await axios.get(`${API_BASE_URL}/auth/profile/${lookupKey}`);
+            if (res.data.success) {
+                const profileData = res.data.data || {};
+                
+                // 🚀 FIXED: Added whatsappNumber to match your backend Mongoose schema key!
+               let phoneNumber = profileData.whatsappNumber || 
+                                    profileData.WhatsApp || 
+                                    profileData.whatsapp || 
+                                    profileData.WhatsAppNumber ||
+                                    profileData.phone;
+
+                if (!phoneNumber) {
+                    alert(`Target manager @${displayUsername} has not linked a valid telephone configuration on their account routing card profiles.`);
+                    return;
+                }
+                
+                // 🚀 FIXED: Dynamic Kenyan International Formatting Sanitizer Loop
+                let cleanPhone = String(phoneNumber).trim().replace(/[+\s\-()]/g, ''); // Strip spaces/symbols
+                if (cleanPhone.startsWith('0')) {
+                    // Turn "0799708228" into "254799708228"
+                    cleanPhone = '254' + cleanPhone.substring(1);
+                } else if (cleanPhone.startsWith('1')) {
+                    // Handle newer "01..." lines
+                    cleanPhone = '254' + cleanPhone;
+                } else if (!cleanPhone.startsWith('254') && cleanPhone.length === 9) {
+                    // Fallback boundary match if user left out the leading zero entirely
+                    cleanPhone = '254' + cleanPhone;
+                }
+                
+                const warningMessage = isReportingParty
+                    ? `👋 Hello @${displayUsername}, this is an EFM-PRO Administrator contacting you regarding your active match dispute case reporting channels.`
+                    : `🚨 *EFM-PRO ADMINISTRATIVE NOTICE* 🚨\n\n@${displayUsername}, an official match delay dispute has been logged against your roster account regarding your current pending matchday fixtures.\n\nPlease communicate and sync score metrics immediately. Failure to settle matches promptly will result in an automatic default walkover loss forfeiture decision outcome.`;
+                
+                const encodedText = encodeURIComponent(warningMessage);
+                
+                // 🚀 FIXED: Updated routing API link passing our clean formatted string variable
+                window.open(`https://wa.me/${cleanPhone}?text=${encodedText}`, '_blank');
+            }
+        } catch (err) {
+            console.error('Failed to parse remote contact properties:', err);
+            alert(`Could not pull contact tables for member: @${displayUsername}`);
+        }
+    };
+
     const uniqueMatchdays = [...new Set(disputedFixtures.map(f => f.matchday))].sort((a, b) => a - b);
 
-    // 🚀 NEW: Compute the precise sub-array targeted by our selection state pipeline
     const filteredFixtures = selectedMatchday === 'all' 
         ? disputedFixtures 
         : disputedFixtures.filter(f => f.matchday.toString() === selectedMatchday);
@@ -172,7 +225,7 @@ const AdminDesk = ({ leagueId, onSelectLeague }) => {
                 <p className="text-xs text-slate-400 mt-1">Manage tournaments, leagues, verify members, and resolve disputes.</p>
             </div>
 
-            {/* --- 🛠️ TAB NAVIGATION HUD --- */}
+            {/* --- TAB NAVIGATION HUD --- */}
             <div className="flex flex-col sm:flex-row items-stretch gap-2 bg-[#0f131c] border border-slate-800 rounded-xl p-1.5">
                 <button
                     onClick={() => setActiveTab('leagues')}
@@ -274,7 +327,6 @@ const AdminDesk = ({ leagueId, onSelectLeague }) => {
                                 </div>
                             )}
 
-                            {/* 🚀 NEW: HUD FILTER BAR BOX WITH SELECT DROPDOWN ELEMENT */}
                             <div className="bg-[#0f131c] border border-slate-800 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                                 <h4 className="text-sm font-black text-slate-300 uppercase tracking-wider flex items-center gap-2">
                                     <span className="w-1.5 h-1.5 bg-amber-400 rounded-full"></span>
@@ -303,13 +355,17 @@ const AdminDesk = ({ leagueId, onSelectLeague }) => {
                                 </div>
                             ) : (
                                 <div className="space-y-3">
-                                    {/* 🚀 CHANGED: Maps from filteredFixtures layout state instead of bloated master list array */}
                                     {filteredFixtures.map((fixture) => {
-                                        const playerA = fixture.playerA?._id ? fixture.playerA : { _id: fixture.playerA, username: 'Player A' };
-                                        const playerB = fixture.playerB?._id ? fixture.playerB : { _id: fixture.playerB, username: 'Player B' };
-                                        const isResolving = resolving === fixture._id;
+                                        // 🚀 FIXED: Dynamic parsing fallback handles flat text strings as well as object structures cleanly
+                                        const pAId = fixture.playerA?._id || fixture.playerA;
+                                        const pAName = fixture.playerA?.username || (typeof fixture.playerA === 'string' ? fixture.playerA : 'Player A');
+                                        
+                                        const pBId = fixture.playerB?._id || fixture.playerB;
+                                        const pBName = fixture.playerB?.username || (typeof fixture.playerB === 'string' ? fixture.playerB : 'Player B');
 
+                                        const isResolving = resolving === fixture._id;
                                         const isTrueDispute = fixture.status === 'disputed';
+                                        
                                         const borderClass = isTrueDispute ? 'border-rose-500/30 bg-[#0f131c]' : 'border-slate-800/80 bg-[#0f131c]/60';
                                         const badgeClass = isTrueDispute 
                                             ? 'border-rose-500/20 bg-rose-500/10 text-rose-400' 
@@ -323,17 +379,37 @@ const AdminDesk = ({ leagueId, onSelectLeague }) => {
                                                         {isTrueDispute ? 'DISPUTED' : 'STALLED / PENDING'}
                                                     </span>
                                                 </div>
-                                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                                                    <div className="text-sm font-bold text-white truncate max-w-full sm:max-w-[45%]">
-                                                        {playerA.username}
-                                                        {isTrueDispute && <span className="text-rose-400 text-xs ml-2 font-mono block sm:inline">claimed {fixture.playerASubmittedScore ?? '?'}</span>}
-                                                    </div>
-                                                    <span className="text-slate-600 font-mono text-xs text-center shrink-0">VS</span>
-                                                    <div className="text-sm font-bold text-white text-left sm:text-right truncate max-w-full sm:max-w-[45%]">
-                                                        {playerB.username}
-                                                        {isTrueDispute && <span className="text-rose-400 text-xs ml-2 font-mono block sm:inline">claimed {fixture.playerBSubmittedScore ?? '?'}</span>}
-                                                    </div>
-                                                </div>
+                                                {/* --- INSIDE THE RE-MAPPING MATRIX LOOP BLOCK --- */}
+<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    
+    {/* 📱 INTERACTIVE HOVER CONTEXT FOR PLAYER A */}
+    <div 
+        onClick={() => handleContactPlayer(pAId, pAName, isTrueDispute)}
+        className="text-sm font-black text-white truncate max-w-full sm:max-w-[45%] hover:text-cyan-400 cursor-pointer group flex items-center gap-2 transition-colors py-1"
+        title={`Click to alert @${pAName} via WhatsApp`}
+    >
+        <span>@{pAName}</span>
+        <span className="text-[9px] font-mono opacity-100 text-cyan-400 bg-cyan-400/5 border border-cyan-500/10 px-1.5 py-0.5 rounded transition-opacity">
+            💬 contact
+        </span>
+        {isTrueDispute && <span className="text-rose-400 text-xs ml-2 font-mono block sm:inline font-normal">claimed {fixture.playerASubmittedScore ?? '?'}</span>}
+    </div>
+    
+    <span className="text-slate-600 font-mono text-xs text-center shrink-0">VS</span>
+    
+    {/* 📱 INTERACTIVE HOVER CONTEXT FOR PLAYER B */}
+    <div 
+        onClick={() => handleContactPlayer(pBId, pBName, false)}
+        className="text-sm font-black text-white text-left sm:text-right truncate max-w-full sm:max-w-[45%] hover:text-cyan-400 cursor-pointer group flex sm:flex-row-reverse items-center gap-2 transition-colors py-1"
+        title={`Click to alert @${pBName} via WhatsApp`}
+    >
+        <span>@{pBName}</span>
+        <span className="text-[9px] font-mono opacity-100 text-cyan-400 bg-cyan-400/5 border border-cyan-500/10 px-1.5 py-0.5 rounded transition-opacity">
+            💬 contact
+        </span>
+        {isTrueDispute && <span className="text-rose-400 text-xs mr-2 font-mono block sm:inline font-normal">claimed {fixture.playerBSubmittedScore ?? '?'}</span>}
+    </div>
+</div>
                                                 <button 
                                                     onClick={() => openResolveForm(fixture)} 
                                                     disabled={isResolving} 

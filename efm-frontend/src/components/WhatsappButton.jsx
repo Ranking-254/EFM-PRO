@@ -14,8 +14,11 @@ function WhatsAppButton() {
   return (
     <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 group">
       
-      {/* Label slide-out on hover */}
-      <span className="bg-[#121824] text-white text-xs font-black uppercase tracking-widest px-4 py-2.5 rounded-xl border border-slate-800 shadow-2xl opacity-0 translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300 pointer-events-none whitespace-nowrap">
+      {/* v4 Tailwind Magic:
+        - Mobile: loops the 'animate-mobile-flash' theme utility
+        - Desktop (md:): clears the loop and rolls back to standard desktop hover styling
+      */}
+      <span className="bg-[#121824] text-white text-xs font-black uppercase tracking-widest px-4 py-2.5 rounded-xl border border-slate-800 shadow-2xl transition-all duration-300 pointer-events-none whitespace-nowrap animate-mobile-flash md:animate-none md:opacity-0 md:translate-x-2 md:group-hover:opacity-100 md:group-hover:translate-x-0">
         Contact Admin 💬
       </span>
 

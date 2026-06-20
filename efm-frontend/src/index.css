@@ -1,2 +1,16 @@
-/* src/index.css */
 @import "tailwindcss";
+
+@theme {
+  --animate-mobile-flash: loopFade 10s infinite ease-in-out;
+
+  @keyframes loopFade {
+    0%, 50% { 
+      opacity: 1; 
+      transform: translateX(0); 
+    }
+    55%, 100% { 
+      opacity: 0; 
+      transform: translateX(8px); 
+    }
+  }
+}

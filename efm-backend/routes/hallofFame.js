@@ -1,7 +1,7 @@
 // routes/hallOfFame.js
 const express = require('express');
 const router = express.Router();
-const HallOfFame = require('../models/HallOfFame');
+const HallOfFame = require('../models/HallofFame');
 
 // 🔌 GET Endpoint to fetch all historical tournament documents
 router.get('/hall-of-fame', async (req, res) => {

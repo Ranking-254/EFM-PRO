@@ -4,7 +4,7 @@ const router = express.Router();
 const League = require('../models/League');
 const User = require('../models/user');
 const Fixture = require('../models/Fixture'); 
-const HallOfFame = require('../models/HallOfFame');//
+const HallofFame = require('../models/HallofFame');
 // FIXED: Swapped out single function import for our Advanced Triple-Format Engine Map Objects
 const { 
     generateClassicLeague, 

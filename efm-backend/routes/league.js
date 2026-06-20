@@ -988,21 +988,49 @@ const checkAndCompleteLeague = async (req, leagueId) => {
         }
 
         // --- HANDLER B: CLASSIC TOURNAMENTS LEG STANDARDS ---
-        if (formatType === 'classic') {
-            const totalFixturesCount = await Fixture.countDocuments({ leagueId: objectIdLeagueId });
-            const confirmedFixturesCount = await Fixture.countDocuments({ leagueId: objectIdLeagueId, status: 'confirmed' });
+       if (formatType === 'classic') {
+            // Fetch all fixtures for this league to analyze the matchday milestones
+            const totalFixtures = await Fixture.find({ leagueId: objectIdLeagueId });
+            const activeMatchday = league.currentMatchday || 1;
 
-            if (totalFixturesCount > 0 && confirmedFixturesCount === totalFixturesCount) {
-                league.status = 'completed';
-                await league.save();
+            // Isolate matches belonging strictly to the current active week
+            const currentRoundMatches = totalFixtures.filter(f => f.matchday === activeMatchday);
+            const confirmedMatchesInRound = currentRoundMatches.filter(f => f.status === 'confirmed');
 
-                await pushAndEmitNotification(req, league.players, {
-                    _id: new mongoose.Types.ObjectId().toString(),
-                    message: `🏆 Season Concluded! All matchdays inside "${league.name}" are finished. Check the final Standings board to see your official rank positioning!`,
-                    type: "league_assignment",
-                    isRead: false,
-                    createdAt: new Date()
-                });
+            // 🚀 STEP 1: Advance matchday only if ALL matches for the current round are confirmed
+            if (currentRoundMatches.length > 0 && confirmedMatchesInRound.length === currentRoundMatches.length) {
+                
+                // Determine the absolute max matchday available in the generated fixtures
+                const uniqueMatchdays = [...new Set(totalFixtures.map(f => f.matchday))].sort((a, b) => a - b);
+                const maxLeagueMatchday = uniqueMatchdays.length > 0 ? uniqueMatchdays[uniqueMatchdays.length - 1] : 1;
+
+                if (activeMatchday >= maxLeagueMatchday) {
+                    // Absolute end of the line: Mark league as fully completed
+                    league.status = 'completed';
+                    await league.save();
+
+                    await pushAndEmitNotification(req, league.players, {
+                        _id: new mongoose.Types.ObjectId().toString(),
+                        message: `🏆 Season Concluded! All matchdays inside "${league.name}" are finished. Check the final Standings board to see your official rank positioning!`,
+                        type: "league_assignment",
+                        isRead: false,
+                        createdAt: new Date()
+                    });
+                } else {
+                    // Increment the round sequence counter safely by 1
+                    const nextMatchdayNumber = activeMatchday + 1;
+                    league.currentMatchday = nextMatchdayNumber;
+                    await league.save();
+
+                    // Alert all league participants instantly that the next round's games are live
+                    await pushAndEmitNotification(req, league.players, {
+                        _id: new mongoose.Types.ObjectId().toString(),
+                        message: `📅 MATCHDAY ADVANCED: Round ${nextMatchdayNumber} Fixtures inside "${league.name}" are officially live! Run your games now.`,
+                        type: "general",
+                        isRead: false,
+                        createdAt: new Date()
+                    });
+                }
             }
             return;
         }

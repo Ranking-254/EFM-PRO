@@ -396,7 +396,7 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey, s
                                     {league.status === 'active' && (
                                         <div className="flex items-center gap-2 text-xs text-slate-400 font-mono">
                                             <span className="w-1.5 h-1.5 bg-[#a3e635] rounded-full animate-pulse"></span>
-                                            Matchday {league.currentMatchday || 1} in progress
+                                            Matchday {league.currentMatchday || league.matchday || 1} in progress
                                         </div>
                                     )}
                                 </div>

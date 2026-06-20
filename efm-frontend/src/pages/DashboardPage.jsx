@@ -169,7 +169,7 @@ const DashboardPage = ({ currentUser, onNavigate }) => {
             if (res.data.success) {
                 setForm(prev => ({ ...prev, profileImage: res.data.data.profileImage }));
                 setProfile(prev => ({ ...prev, profileImage: res.data.data.profileImage }));
-                setMessage({ type: 'success', text: 'Cropped manager avatar active!' });
+                setMessage({ type: 'success', text: 'Manager avatar updated successfully!' });
             }
         } catch (err) {
             const serverErr = err.response?.data?.error || 'Upload failed.';

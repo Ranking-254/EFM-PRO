@@ -1,4 +1,4 @@
-// src/components/TournamentHub.jsx
+// src/components/TournamentHub
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 
@@ -6,7 +6,7 @@ const API_BASE_URL = window.location.hostname === 'localhost'
     ? 'http://localhost:5000/api/v1' 
     : 'https://efm-pro.onrender.com/api/v1';
 
-const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey }) => {
+const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey, setLoginModalOpen }) => {
     const [leagues, setLeagues] = useState([]);
     const [loading, setLoading] = useState(true);
     const [joining, setJoining] = useState(null);
@@ -22,6 +22,37 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey })
 
     // MODAL STATE ENGINE
     const [rulesModal, setRulesModal] = useState({ isOpen: false, league: null, targetAction: null });
+
+
+    // 🚀 ADD HERE: Link Share State & Helper Hooks
+    const [copyStateId, setCopyStateId] = useState(null);
+
+    const triggerCopyLink = async (e, leagueId) => {
+        e.stopPropagation();
+        const deepResourceUrl = `${window.location.origin}/tournaments/${leagueId}`;
+        try {
+            await navigator.clipboard.writeText(deepResourceUrl);
+            setCopyStateId(leagueId);
+            setTimeout(() => setCopyStateId(null), 1800);
+        } catch (err) {
+            console.error('Clipboard text write failure:', err);
+        }
+    };
+
+   const triggerWhatsAppShare = (e, leagueId, leagueName, status) => {
+        e.stopPropagation();
+        const deepResourceUrl = `${window.location.origin}/tournaments/${leagueId}`;
+        
+        // Dynamic messaging template based on tournament recruitment status
+        const messageTitle = status === 'recruiting'
+            ? `📝 *EFM-PRO SQUAD SLOTS OPEN* 📝\n\nSlots are open for the upcoming season of: *${leagueName}*!`
+            : `🎮 *EFM-PRO LIVE MATCH BROADCAST* 🎮\n\nTrack brackets and live standings positions for the league: *${leagueName}*!`;
+
+        const inviteMessage = encodeURIComponent(
+            `${messageTitle}\n\n📌 *Click Invite Link to Access Here:* \n${deepResourceUrl}`
+        );
+        window.open(`https://wa.me/?text=${inviteMessage}`, '_blank');
+    };
 
     useEffect(() => {
         if (currentUser) {
@@ -49,8 +80,13 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey })
     }, [fetchLeagues, refreshKey]);
 
     const handleJoinBracket = async (leagueId) => {
+        // 🚀 UPDATED INTERCEPTOR: Open the login portal instantly if a guest taps the CTA
         if (!currentUser) {
-            setError('You must be registered to join a league.');
+            if (typeof setLoginModalOpen === 'function') {
+                setLoginModalOpen(true);
+            } else {
+                setError('Authentication required. Please use the login portal in the navigation bar.');
+            }
             return;
         }
 
@@ -282,7 +318,7 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey })
                 <div className="text-center py-16 bg-[#0f131c]/40 rounded-3xl border border-dashed border-slate-900 max-w-md mx-auto">
                     <div className="text-slate-500 text-5xl mb-2">🔍</div>
                     <h3 className="text-md font-bold text-white mb-1">No Leagues Match Criteria</h3>
-                    <p className="text-slate-400 text-xs">Adjust your status or tournament format filters above.</p>
+                    <p className="text-slate-400 text-xs">Try refreshing the page.</p>
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -364,23 +400,53 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey })
                                         </div>
                                     )}
                                 </div>
+                                <div className="pt-3 border-t border-slate-900/60 flex items-center justify-between gap-2 bg-[#090d14]/40 p-2 rounded-xl">
+                                    <button 
+                                        onClick={(e) => triggerCopyLink(e, league._id)}
+                                        className={`flex-1 text-[10px] font-black uppercase tracking-wider py-2 rounded-lg font-mono border transition-all ${
+                                            copyStateId === league._id 
+                                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' 
+                                                : 'bg-[#0f131c] text-slate-400 border-slate-800 hover:border-slate-700 text-slate-300'
+                                        }`}
+                                    >
+                                        {copyStateId === league._id ? '✓ Copied' : '🔗 Copy Link'}
+                                    </button>
+                                    <button 
+                                        onClick={(e) => triggerWhatsAppShare(e, league._id, league.name)}
+                                        className="flex-1 text-[10px] font-black uppercase tracking-wider py-2 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500 hover:text-slate-950 transition-all font-mono"
+                                    >
+                                        📱 Share Invite
+                                    </button>
+                                </div>
 
                                 <div className="pt-4">
                                     {league.status === 'recruiting' && !isFull ? (
-                                        <button
-                                            onClick={() => handleJoinBracket(league._id)}
-                                            disabled={isJoining || !currentUser || hasJoined}
-                                            className={`w-full text-xs font-black uppercase tracking-wider py-3 rounded-xl transition-all ${
+                                       <button
+                                            onClick={() => {
+                                                if (!currentUser) {
+                                                    // Trigger your login modal handler directly here
+                                                    if (typeof setLoginModalOpen === 'function') {
+                                                        setLoginModalOpen(true);
+                                                    } else {
+                                                        // Fallback alert framework if prop isn't passed down yet
+                                                        setError('Please open the login portal from the navbar to continue.');
+                                                    }
+                                                } else {
+                                                    handleJoinBracket(league._id);
+                                                }
+                                            }}
+                                            disabled={isJoining || (currentUser && hasJoined)}
+                                            className={`w-full text-xs font-black uppercase tracking-wider py-3 rounded-xl transition-all border ${
                                                 hasJoined
-                                                    ? 'bg-[#a3e635]/20 text-[#a3e635] border border-[#a3e635]/30 cursor-default'
+                                                    ? 'bg-[#a3e635]/20 text-[#a3e635] border-[#a3e635]/30 cursor-default'
                                                     : !currentUser
-                                                    ? 'bg-slate-900 text-slate-500 cursor-not-allowed border border-slate-800'
+                                                    ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-400 hover:bg-cyan-500 hover:text-slate-950 shadow-lg shadow-cyan-500/[0.05]' // Active glow for guests!
                                                     : isJoining
                                                     ? 'bg-cyan-400/50 text-slate-950 border border-cyan-400'
-                                                    : 'bg-cyan-400 hover:bg-cyan-300 text-slate-950 shadow-lg shadow-cyan-400/10 active:scale-[0.98]'
+                                                    : 'bg-cyan-400 hover:bg-cyan-300 text-slate-950 border-cyan-400 shadow-lg shadow-cyan-400/10 active:scale-[0.98]'
                                             }`}
                                         >
-                                            {isJoining ? 'Joining...' : hasJoined ? 'Joined ✓' : !currentUser ? 'Register or Login first' : 'Join Bracket'}
+                                            {isJoining ? 'Joining...' : hasJoined ? 'Joined ✓' : !currentUser ? '🔒 Login to Join Bracket' : 'Join Bracket'}
                                         </button>
                                     ) : (
                                         <div className="flex flex-col sm:flex-row gap-2 w-full">
@@ -489,7 +555,7 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey })
                             >
                                 {rulesModal.targetAction === 'standings' ? 'I Understand, View Standings ✓' : 'Close Briefing'}
                             </button>
-                        </div>
+                        </div> 
 
                     </div>
                 </div>

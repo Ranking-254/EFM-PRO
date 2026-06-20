@@ -978,7 +978,7 @@ const checkAndCompleteLeague = async (req, leagueId) => {
 
             await pushAndEmitNotification(req, league.players, {
                 _id: new mongoose.Types.ObjectId().toString(),
-                message: `🪓 NEXT ROUND READY: Round ${nextMatchdayNumber} (${nextRoundName}) inside "${league.name}" has loaded! Head to your dashboard to run your match pairings.`,
+                message: `🪓 NEXT ROUND READY: Round ${nextMatchdayNumber} (${nextRoundName}) inside "${league.name}" has loaded! Congratulations! Head to your dashboard to run your match pairings.`,
                 type: "general",
                 isRead: false,
                 createdAt: new Date()
@@ -1007,7 +1007,7 @@ const checkAndCompleteLeague = async (req, leagueId) => {
             return;
         }
 
-        // --- 🚀 HANDLER C: NEW GROUP STAGE + KNOCKOUT INTELLIGENT AUTOMATION ENGINE ---
+        // ---  HANDLER C: NEW GROUP STAGE + KNOCKOUT INTELLIGENT AUTOMATION ENGINE ---
         if (formatType === 'group_knockout' || formatType.includes('group')) {
             const totalFixtures = await Fixture.find({ leagueId: objectIdLeagueId });
             const activeMatchday = league.currentMatchday || 1;
@@ -1041,7 +1041,7 @@ const checkAndCompleteLeague = async (req, leagueId) => {
                 return;
             }
 
-            // Scenario 2: Group stages are completely over! Transition to Knockouts
+            // Scenario 2: Group stages are completely over! Transition to Knockouts / Play-offs
             if (activeMatchday === maxGroupMatchday) {
                 const leagueData = await League.findById(objectIdLeagueId).populate('players', 'username');
                 const playerGroupMap = {};
@@ -1078,20 +1078,22 @@ const checkAndCompleteLeague = async (req, leagueId) => {
                 });
 
                 const survivors = [];
+                const thirdPlaceWildcards = [];
                 const knockedOut = [];
 
                 Object.keys(groupSegments).forEach(label => {
                     groupSegments[label].sort((a, b) => b.points - a.points || b.gd - a.gd);
                     groupSegments[label].forEach((row, index) => {
                         if (index < 2) survivors.push(row.playerId);
+                        else if (index === 2) thirdPlaceWildcards.push(row.playerId);
                         else knockedOut.push(row.playerId);
                     });
                 });
-
+//   Move notifications up here so they ALWAYS fire when groups conclude
                 if (knockedOut.length > 0) {
                     await pushAndEmitNotification(req, knockedOut, {
                         _id: new mongoose.Types.ObjectId().toString(),
-                        message: `💔 CAMPAIGN CONCLUDED: You finished outside the Top 2 in your Group Pool. "${league.name}" has advanced to the brackets stage. Better luck next season!`,
+                        message: `💔 CAMPAIGN CONCLUDED: You finished outside the qualification tier in your pool. "${league.name}" has advanced to the bracket stage. Better luck next season!`,
                         type: "general",
                         isRead: false,
                         createdAt: new Date()
@@ -1107,12 +1109,52 @@ const checkAndCompleteLeague = async (req, leagueId) => {
                         createdAt: new Date()
                     });
                 }
+                // Check if direct survivors hit a perfect power of two bracket scale size rule
+                const countOfSurvivors = survivors.length;
+                const isPowerOfTwo = countOfSurvivors > 0 && (countOfSurvivors & (countOfSurvivors - 1)) === 0;
 
-                // Generate dynamic cross-seeded knockout bracket (Semifinals or Quarterfinals)
+                // THE WILDCARD EXTRACTION BRANCH: Activate play-off if direct qualifiers have irregular counts (e.g., 12 players)
+                if (!isPowerOfTwo && thirdPlaceWildcards.length >= 2) {
+                    const nextMatchdayNumber = activeMatchday + 1;
+                    let playOffFixtures = [];
+                    const matchesCount = Math.floor(thirdPlaceWildcards.length / 2);
+
+                    for (let i = 0; i < matchesCount; i++) {
+                        playOffFixtures.push({
+                            leagueId: objectIdLeagueId,
+                            matchday: nextMatchdayNumber,
+                            roundName: "Wildcard Play-off",
+                            stageType: 'wildcard_stage', // Unique structural identifier tag
+                            label: `WILDCARD_M${i + 1}`,
+                            playerA: thirdPlaceWildcards[i],
+                            playerB: thirdPlaceWildcards[thirdPlaceWildcards.length - 1 - i],
+                            playerAScore: null,
+                            playerBScore: null,
+                            playerASubmittedScore: null,
+                            playerBSubmittedScore: null,
+                            status: 'pending'
+                        });
+                    }
+
+                    await Fixture.insertMany(playOffFixtures);
+                    league.currentMatchday = nextMatchdayNumber;
+                    await league.save();
+
+                    // Alert players to check the newly spawned play-off round
+                    await pushAndEmitNotification(req, thirdPlaceWildcards, {
+                        _id: new mongoose.Types.ObjectId().toString(),
+                        message: `🔥 WILDCARD LINE ACTIVATED: You finished 3rd in your pool and qualified for the high-stakes Wildcard Play-off round inside "${league.name}"! Run your survival pairing match now.`,
+                        type: "general",
+                        isRead: false,
+                        createdAt: new Date()
+                    });
+                    return;
+                }
+
+               
+
                 const nextMatchdayNumber = activeMatchday + 1;
                 const matchesCount = survivors.length / 2;
-                
-                // 🚀 FIXED: Dynamic naming resolver tags rows based on remaining manager metrics pool count
                 let roundName = matchesCount === 1 ? "Finals" : matchesCount === 2 ? "Semifinals" : "Quarterfinals";
 
                 let bracketFixtures = [];
@@ -1120,8 +1162,8 @@ const checkAndCompleteLeague = async (req, leagueId) => {
                     bracketFixtures.push({
                         leagueId: objectIdLeagueId,
                         matchday: nextMatchdayNumber,
-                        roundName: roundName, // 🚀 Now safely preserved by your new Mongoose schema model!
-                        stageType: 'knockout_stage', // 🚀 Force explicit tag so frontend components flip cleanly
+                        roundName: roundName,
+                        stageType: 'knockout_stage',
                         label: `BRACKET_R${nextMatchdayNumber}_M${i + 1}`,
                         playerA: survivors[i],
                         playerB: survivors[survivors.length - 1 - i], 
@@ -1139,16 +1181,105 @@ const checkAndCompleteLeague = async (req, leagueId) => {
                 return;
             }
 
-            // Scenario 3: We are inside the deep Knockout stages of a group style tournament
-            // Scenario 3: We are inside the deep Knockout stages of a group style tournament
+            // Scenario 3: Handling progression after the transitional Wildcard stage / deep Knockout stages
             if (activeMatchday > maxGroupMatchday) {
+                const wildcardFixtures = totalFixtures.filter(f => f.stageType === 'wildcard_stage');
+                const isWildcardMatchdayActive = wildcardFixtures.length > 0 && wildcardFixtures[0].matchday === activeMatchday;
+
+                //  POST-WILDCARD MERGE LOGIC LAYER: Runs when the wildcard play-off matches finish playing
+                if (isWildcardMatchdayActive) {
+                    const wildcardWinners = currentRoundMatches.map(m => m.playerAScore > m.playerBScore ? m.playerA : m.playerB);
+                    
+                    // Re-compile the original Top 2 direct qualifiers who were resting during the wildcard round
+                    const leagueData = await League.findById(objectIdLeagueId).populate('players', 'username');
+                    const playerGroupMap = {};
+                    totalFixtures.forEach(f => {
+                        const idA = f.playerA?._id ? f.playerA._id.toString() : f.playerA?.toString();
+                        const idB = f.playerB?._id ? f.playerB._id.toString() : f.playerB?.toString();
+                        if (idA && f.groupLabel) playerGroupMap[idA] = f.groupLabel;
+                        if (idB && f.groupLabel) playerGroupMap[idB] = f.groupLabel;
+                    });
+
+                    const standingsMap = {};
+                    leagueData.players.forEach(p => {
+                        standingsMap[p._id.toString()] = { playerId: p._id, points: 0, gd: 0, groupLabel: playerGroupMap[p._id.toString()] || 'A' };
+                    });
+
+                    groupStageFixtures.forEach(f => {
+                        if (f.status === 'confirmed') {
+                            const idA = f.playerA?._id ? f.playerA._id.toString() : f.playerA?.toString();
+                            const idB = f.playerB?._id ? f.playerB._id.toString() : f.playerB?.toString();
+                            if (standingsMap[idA] && standingsMap[idB]) {
+                                standingsMap[idA].gd += (f.playerAScore - f.playerBScore);
+                                standingsMap[idB].gd += (f.playerBScore - f.playerAScore);
+                                if (f.playerAScore > f.playerBScore) standingsMap[idA].points += 3;
+                                else if (f.playerBScore > f.playerAScore) standingsMap[idB].points += 3;
+                                else { standingsMap[idA].points += 1; standingsMap[idB].points += 1; }
+                            }
+                        }
+                    });
+
+                    const groupSegments = {};
+                    Object.values(standingsMap).forEach(row => {
+                        if (!groupSegments[row.groupLabel]) groupSegments[row.groupLabel] = [];
+                        groupSegments[row.groupLabel].push(row);
+                    });
+
+                    const directSurvivors = [];
+                    Object.keys(groupSegments).forEach(label => {
+                        groupSegments[label].sort((a, b) => b.points - a.points || b.gd - a.gd);
+                        groupSegments[label].forEach((row, index) => {
+                            if (index < 2) directSurvivors.push(row.playerId);
+                        });
+                    });
+
+                    // Merge direct qualifiers with our new wildcard play-off winners
+                    const finalKnockoutPool = [...directSurvivors, ...wildcardWinners];
+                    const nextMatchdayNumber = activeMatchday + 1;
+                    const nextMatchesCount = finalKnockoutPool.length / 2;
+                    
+                    // Determine the bracket round name dynamically based on the total team count
+                    let roundName = nextMatchesCount === 1 ? "Finals" : nextMatchesCount === 2 ? "Semifinals" : nextMatchesCount === 4 ? "Quarterfinals" : `Round of ${finalKnockoutPool.length}`;
+
+                    let mergedBracketFixtures = [];
+                    for (let i = 0; i < nextMatchesCount; i++) {
+                        mergedBracketFixtures.push({
+                            leagueId: objectIdLeagueId,
+                            matchday: nextMatchdayNumber,
+                            roundName: roundName,
+                            stageType: 'knockout_stage',
+                            label: `BRACKET_R${nextMatchdayNumber}_M${i + 1}`,
+                            playerA: finalKnockoutPool[i],
+                            playerB: finalKnockoutPool[finalKnockoutPool.length - 1 - i],
+                            playerAScore: null,
+                            playerBScore: null,
+                            playerASubmittedScore: null,
+                            playerBSubmittedScore: null,
+                            status: 'pending'
+                        });
+                    }
+
+                    await Fixture.insertMany(mergedBracketFixtures);
+                    league.currentMatchday = nextMatchdayNumber;
+                    await league.save();
+
+                    await pushAndEmitNotification(req, league.players, {
+                        _id: new mongoose.Types.ObjectId().toString(),
+                        message: `🪓 MAIN BRACKETS SPAWNED: The official ${roundName} stage fixtures inside "${league.name}" are loaded! Check the leaderboard tree now.`,
+                        type: "general",
+                        isRead: false,
+                        createdAt: new Date()
+                    });
+                    return;
+                }
+
+                // Standard implementation: Progressive advancement inside deep sudden-death knockout trees
                 const knockoutFixtures = totalFixtures.filter(f => f.stageType === 'knockout_stage');
-                const currentRoundMatches = knockoutFixtures.filter(f => f.matchday === activeMatchday);
+                const currentRoundKnockouts = knockoutFixtures.filter(f => f.matchday === activeMatchday);
                 
-                // 🚀 FIXED: Safe case-insensitive clean matching for the finals round status flag!
-                const isFinalsMatch = currentRoundMatches.length === 1 && 
-                    currentRoundMatches[0].roundName && 
-                    String(currentRoundMatches[0].roundName).trim().toLowerCase() === "finals";
+                const isFinalsMatch = currentRoundKnockouts.length === 1 && 
+                    currentRoundKnockouts[0].roundName && 
+                    String(currentRoundKnockouts[0].roundName).trim().toLowerCase() === "finals";
 
                 if (isFinalsMatch) {
                     league.status = 'completed';
@@ -1165,8 +1296,7 @@ const checkAndCompleteLeague = async (req, leagueId) => {
                 }
 
                 let advancedWinners = [];
-            
-                currentRoundMatches.forEach(match => {
+                currentRoundKnockouts.forEach(match => {
                     const winnerId = match.playerAScore > match.playerBScore ? match.playerA : match.playerB;
                     advancedWinners.push(winnerId);
                 });

@@ -66,9 +66,16 @@ function Navbar({ currentUser, handleLogout, setLoginModalOpen, mobileNavOpen, s
 
         {/* Desktop Profile Status / Action buttons */}
         <div className="hidden md:flex items-center gap-4">
-          <button className="hidden sm:inline-flex bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/20 text-xs font-bold tracking-wider uppercase py-2 px-4 rounded-xl transition-all">
-            Join season 
-          </button>
+         <a 
+  href="https://chat.whatsapp.com/YOUR_GROUP_INVITE_CODE_HERE" 
+  target="_blank" 
+  rel="noopener noreferrer"
+  className="hidden sm:inline-flex"
+>
+  <button className="bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/20 text-xs font-bold tracking-wider uppercase py-2 px-4 rounded-xl transition-all">
+    Join community
+  </button>
+</a>
 
           {currentUser ? (
             <div className="flex items-center gap-3">

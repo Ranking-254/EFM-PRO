@@ -1,6 +1,6 @@
 // src/App.jsx
 import React, { useState, useEffect } from 'react'; 
-import { BrowserRouter, Routes, Route, Navigate, Link, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Link, useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios'; 
 import { io } from 'socket.io-client'; // 🚀 UPGRADED: Added real-time client socket import
 
@@ -43,6 +43,58 @@ function App() {
       <AppContent />
     </BrowserRouter>
   );
+}
+
+// 🚀 UPDATED DYNAMIC INVITATION URL CATCH ENGINE
+function TournamentDeepLinkWrapper({ setSelectedLeagueId }) {
+    const { id } = useParams();
+    const navigate = useNavigate();
+
+    useEffect(() => {
+        const analyzeLeagueStatusAndRoute = async () => {
+            if (!id) return;
+            
+            try {
+                // Mount the global ID reference state immediately
+                setSelectedLeagueId(id);
+
+                // Fetch the league details from your existing base URL layout
+                const targetUrl = window.location.hostname === 'localhost' 
+                    ? `http://localhost:5000/api/v1/leagues/all` 
+                    : `https://efm-pro.onrender.com/api/v1/leagues/all`;
+
+                const res = await axios.get(targetUrl);
+                
+                if (res.data.success) {
+                    // Find our specific shared league inside the payload master array
+                    const targetLeague = res.data.data.find(l => l._id === id);
+
+                    if (targetLeague && targetLeague.status === 'recruiting') {
+                        // 🟢 IF RECRUITING: Send them straight to the registration/join hub view
+                        navigate('/tournament', { replace: true });
+                    } else {
+                        // 🏆 IF ACTIVE/LIVE: Direct fallback straight to scoreboard tables
+                        navigate('/standings', { replace: true });
+                    }
+                } else {
+                    // Safety structural fallback if table parsing fails
+                    navigate('/standings', { replace: true });
+                }
+            } catch (err) {
+                console.error("Failed to parse invite metadata routing rules:", err);
+                navigate('/standings', { replace: true });
+            }
+        };
+
+        analyzeLeagueStatusAndRoute();
+    }, [id, setSelectedLeagueId, navigate]);
+
+    return (
+        <div className="flex flex-col items-center justify-center py-20 gap-3">
+            <div className="w-4 h-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin"></div>
+            <span className="text-slate-400 text-xs font-bold uppercase tracking-wider font-mono">Verifying Invite Link Card...</span>
+        </div>
+    );
 }
 
 // 🚀 Core Content Wrapper Layer (Enables clean programmatic useNavigate executions)
@@ -98,56 +150,52 @@ function AppContent() {
 
     socket.emit('register_manager', currentUserId);
 
+    // 🚀 FIX 1: Smart update for read states without wiping unmatched history cards
+    socket.on('notifications_updated', (backendNotificationsArray) => {
+        setCurrentUser(prevUser => {
+            if (!prevUser) return null;
+            
+            const localNotifications = prevUser.notifications || [];
+            
+            const mergedNotifications = localNotifications.map(localNotif => {
+                const serverMatch = backendNotificationsArray.find(s => s._id === localNotif._id || s.message === localNotif.message);
+                if (serverMatch) {
+                    return { ...localNotif, ...serverMatch }; // Sync properties (like isRead)
+                }
+                return localNotif; // Keep historical items completely safe
+            });
 
-// 🚀 FIX 1: Smart update for read states without wiping unmatched history cards
-socket.on('notifications_updated', (backendNotificationsArray) => {
-    setCurrentUser(prevUser => {
-        if (!prevUser) return null;
-        
-        const localNotifications = prevUser.notifications || [];
-        
-        // Merge records: If an alert exists in the backend payload, update its status. 
-        // If it only exists locally (like your score reports or history alerts), preserve it untouched!
-        const mergedNotifications = localNotifications.map(localNotif => {
-            const serverMatch = backendNotificationsArray.find(s => s._id === localNotif._id || s.message === localNotif.message);
-            if (serverMatch) {
-                return { ...localNotif, ...serverMatch }; // Sync properties (like isRead)
-            }
-            return localNotif; // Keep historical items completely safe
+            backendNotificationsArray.forEach(serverNotif => {
+                const alreadyExists = mergedNotifications.some(m => m._id === serverNotif._id || m.message === serverNotif.message);
+                if (!alreadyExists) {
+                    mergedNotifications.unshift(serverNotif);
+                }
+            });
+
+            const updatedUserObj = { ...prevUser, notifications: mergedNotifications };
+            localStorage.setItem('efmpro_user', JSON.stringify(updatedUserObj));
+            return updatedUserObj;
         });
+    });
 
-        // Add any brand new server notifications that aren't in our local array yet
-        backendNotificationsArray.forEach(serverNotif => {
-            const alreadyExists = mergedNotifications.some(m => m._id === serverNotif._id || m.message === serverNotif.message);
-            if (!alreadyExists) {
-                mergedNotifications.unshift(serverNotif);
-            }
+    // 🚀 FIX 2: Smart update for new global league broadcasts
+    socket.on('global_notification', (newNotif) => {
+        setCurrentUser(prevUser => {
+            if (!prevUser) return null;
+            
+            const currentAlerts = prevUser.notifications || [];
+            
+            const alertExists = currentAlerts.some(n => n.message === newNotif.message);
+            if (alertExists) return prevUser;
+
+            const updatedNotifications = [newNotif, ...currentAlerts];
+            const updatedUserObj = { ...prevUser, notifications: updatedNotifications };
+            
+            localStorage.setItem('efmpro_user', JSON.stringify(updatedUserObj));
+            return updatedUserObj;
         });
-
-        const updatedUserObj = { ...prevUser, notifications: mergedNotifications };
-        localStorage.setItem('efmpro_user', JSON.stringify(updatedUserObj));
-        return updatedUserObj;
     });
-});
 
-// 🚀 FIX 2: Smart update for new global league broadcasts
-socket.on('global_notification', (newNotif) => {
-    setCurrentUser(prevUser => {
-        if (!prevUser) return null;
-        
-        const currentAlerts = prevUser.notifications || [];
-        
-        // Prevent duplicate cards if the user refreshes
-        const alertExists = currentAlerts.some(n => n.message === newNotif.message);
-        if (alertExists) return prevUser;
-
-        const updatedNotifications = [newNotif, ...currentAlerts];
-        const updatedUserObj = { ...prevUser, notifications: updatedNotifications };
-        
-        localStorage.setItem('efmpro_user', JSON.stringify(updatedUserObj));
-        return updatedUserObj;
-    });
-});
     return () => {
         socket.disconnect();
     };
@@ -157,11 +205,29 @@ socket.on('global_notification', (newNotif) => {
     setTournamentRefreshToken(prev => prev + 1);
   };
 
-  const handleLogin = (user) => {
+  const handleLogin = async (user) => {
+    // 1. Immediately cache and set the base authentication profile data
     localStorage.setItem('efmpro_user', JSON.stringify(user));
     setCurrentUser(user);
     setLoginModalOpen(false);
     navigate('/dashboard');
+    
+    // 2. 🚀 FORCE INITIAL HYDRATION: Pull full historical records (including notifications array) right at login
+    const currentUserId = user.id || user._id;
+    if (!currentUserId) return;
+
+    try {
+        const res = await axios.get(`${API_BASE_URL}/auth/user/${currentUserId}`); 
+        if (res.data.success) {
+            const freshData = res.data.data;
+            
+            // Hydrate the layout states so the notification badges display accurately on the first render
+            setCurrentUser(freshData);
+            localStorage.setItem('efmpro_user', JSON.stringify(freshData));
+        }
+    } catch (err) {
+        console.error("Failed to execute initial profile synchronization upon manager login:", err);
+    }
   };
 
   const handleLogout = () => {
@@ -193,6 +259,8 @@ socket.on('global_notification', (newNotif) => {
             </div>
           } />
           
+          {/* 🚀 NEW DYNAMIC INCOMING RESOURCE URL CAPTURE ROUTE */}
+          <Route path="/tournaments/:id" element={<TournamentDeepLinkWrapper setSelectedLeagueId={setSelectedLeagueId} />} />
 
           {/* Tournament Route */}
           <Route path="/tournament" element={
@@ -210,6 +278,7 @@ socket.on('global_notification', (newNotif) => {
               <div className="w-full flex justify-center">
                 <TournamentHub
                   currentUser={currentUser}
+                  setLoginModalOpen={setLoginModalOpen}
                   onJoinSuccess={(leagueId) => {
                     setSelectedLeagueId(leagueId);
                     navigate('/matchday-hub');

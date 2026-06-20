@@ -65,7 +65,8 @@ const allowedOrigins = [
     'http://localhost:5173',                  // Your local frontend development server
     'https://pattinmugambi.me.ke',            // Custom main portfolio/brand wrapper
     'https://efm-pro.me.ke',                  // Main production frontend domain
-    'https://efm-frontend.vercel.app'         // Fallback Vercel staging deployment domain
+    'https://efm-frontend.vercel.app',        // Fallback Vercel staging deployment domain
+   // 'https://animal-challenge-spruce.ngrok-free.dev/' // Temporary ngrok tunnel for testing (Replace with your actual tunnel URL when active)
 ];
 
 // 🚀 UNIFIED CORS MIDDLEWARE LAYER (Must be declared before body-parsers and routes)

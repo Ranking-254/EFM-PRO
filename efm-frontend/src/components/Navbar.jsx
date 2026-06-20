@@ -35,7 +35,9 @@ function Navbar({ currentUser, handleLogout, setLoginModalOpen, mobileNavOpen, s
           )}
           
           <Link to="/support" className={`hover:text-white transition-colors ${currentPath === '/support' ? 'text-white' : ''}`}>Support</Link>
+          <Link to="/hall-of-fame" className={`hover:text-white transition-colors ${currentPath === '/hall-of-fame' ? 'text-white' : ''}`}>Hall of Fame</Link>
         </nav>
+        
 
         {/* 📱 MOBILE ACTION TRAY: Renders side-by-side with hamburger on small screens */}
         <div className="flex md:hidden items-center gap-3">
@@ -132,7 +134,7 @@ function Navbar({ currentUser, handleLogout, setLoginModalOpen, mobileNavOpen, s
             <Link to="/" onClick={() => setMobileNavOpen(false)} className={`block w-full text-left text-sm font-bold uppercase tracking-wider py-2 ${currentPath === '/' ? 'text-cyan-400' : 'text-slate-400'}`}>Home</Link>
             <Link to="/tournament" onClick={() => setMobileNavOpen(false)} className={`block w-full text-left text-sm font-bold uppercase tracking-wider py-2 ${currentPath === '/tournament' ? 'text-cyan-400' : 'text-slate-400'}`}>Tournaments</Link>
             <Link to="/support" onClick={() => setMobileNavOpen(false)} className={`block w-full text-left text-sm font-bold uppercase tracking-wider py-2 ${currentPath === '/support' ? 'text-cyan-400' : 'text-slate-400'}`}>Support</Link>
-            
+            <Link to="/hall-of-fame" onClick={() => setMobileNavOpen(false)} className={`block w-full text-left text-sm font-bold uppercase tracking-wider py-2 ${currentPath === '/hall-of-fame' ? 'text-cyan-400' : 'text-slate-400'}`}>Hall of Fame</Link>
             {currentUser && (
               <Link to="/dashboard" onClick={() => setMobileNavOpen(false)} className={`block w-full text-left text-sm font-bold uppercase tracking-wider py-2 ${currentPath === '/dashboard' ? 'text-cyan-400' : 'text-slate-400'}`}>Dashboard</Link>
             )}

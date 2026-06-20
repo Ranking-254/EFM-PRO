@@ -4,6 +4,7 @@ const router = express.Router();
 const League = require('../models/League');
 const User = require('../models/user');
 const Fixture = require('../models/Fixture'); 
+const HallOfFame = require('../models/HallOfFame');//
 // 🚀 FIXED: Swapped out single function import for our Advanced Triple-Format Engine Map Objects
 const { 
     generateClassicLeague, 
@@ -264,8 +265,7 @@ router.post('/:id/join', async (req, res) => {
 
        if (triggerScheduleGeneration) {
             let schedulePlan = [];
-            const formatType = String(league.tournamentFormat || 'classic').trim();
-
+const formatType = String(league.tournamentFormat || 'classic').trim();
             if (formatType === 'knockout') {
                 schedulePlan = generateKnockoutBracket(league.players);
             } else if (formatType === 'group_knockout' || formatType.includes('group')) {
@@ -695,7 +695,7 @@ router.put('/:id', async (req, res) => {
                     await Fixture.deleteMany({ leagueId: league._id });
 
                     let newSchedulePlan = [];
-                    const formatType = league.tournamentFormat || 'classic';
+                   const formatType = String(league.tournamentFormat || 'classic').trim();
 
                     if (formatType === 'knockout') {
                         newSchedulePlan = generateKnockoutBracket(league.players);
@@ -908,14 +908,18 @@ router.get('/:id/roster', async (req, res) => {
     }
 });
 
+
 // Core automation bracket engine advancement loop logic block
 const checkAndCompleteLeague = async (req, leagueId) => {
     try {
         const objectIdLeagueId = typeof leagueId === 'string' ? new mongoose.Types.ObjectId(leagueId) : leagueId;
-        const league = await League.findById(objectIdLeagueId);
+        
+        // 🚀 CRITICAL FIX: Populate players roster profile on fetch so we have real usernames available for the podium
+        const league = await League.findById(objectIdLeagueId).populate('players', 'username');
         
         if (!league || league.status === 'completed') return;
 
+        // Clean, bulletproof layout string reader pointing to your true database field key
         const formatType = String(league.tournamentFormat || 'classic').trim();
 
         // --- HANDLER A: BRACKET ELIMINATION AUTOMATION (KNOCKOUTS) ---
@@ -932,6 +936,40 @@ const checkAndCompleteLeague = async (req, leagueId) => {
             if (currentRoundMatches.length === 1 && currentRoundMatches[0].roundName === "Finals") {
                 league.status = 'completed';
                 await league.save();
+                
+                const finalMatch = currentRoundMatches[0];
+                const isPlayerAWinner = finalMatch.playerAScore > finalMatch.playerBScore;
+                
+                // Track down the matched text username profiles securely from our populated players list
+                const rawWinnerId = (isPlayerAWinner ? finalMatch.playerA : finalMatch.playerB)?.toString();
+                const rawRunnerUpId = (isPlayerAWinner ? finalMatch.playerB : finalMatch.playerA)?.toString();
+
+                const winnerUser = league.players.find(p => p._id.toString() === rawWinnerId);
+                const runnerUpUser = league.players.find(p => p._id.toString() === rawRunnerUpId);
+
+                const podiumData = {
+                    winner: { 
+                        userId: rawWinnerId || 'N/A', 
+                        username: winnerUser ? winnerUser.username : 'Champion', 
+                        teamName: 'Cup Winner' 
+                    },
+                    runnerUp: { 
+                        userId: rawRunnerUpId || 'N/A', 
+                        username: runnerUpUser ? runnerUpUser.username : 'Runner-Up', 
+                        teamName: 'Finalist' 
+                    },
+                    thirdPlace: { userId: 'N/A', username: 'N/A', teamName: 'N/A' }
+                };
+
+                // Store permanently into the Hall of Fame archive collection mapping the right format field
+                await HallOfFame.create({
+                    leagueId: league._id,
+                    leagueName: league.name,
+                    formatType: league.tournamentFormat || 'knockout', // 🟢 FIX: Map database field cleanly
+                    isPaid: league.isPaid || false,
+                    prizePool: league.prizePool || 0,
+                    podium: podiumData
+                });
                 
                 await pushAndEmitNotification(req, league.players, {
                     _id: new mongoose.Types.ObjectId().toString(),
@@ -954,7 +992,6 @@ const checkAndCompleteLeague = async (req, leagueId) => {
             let nextRoundName = nextRoundMatchesCount === 1 ? "Finals" : nextRoundMatchesCount === 2 ? "Semifinals" : "Quarterfinals";
             
             let nextRoundFixtures = [];
-
             for (let i = 0; i < nextRoundMatchesCount; i++) {
                 nextRoundFixtures.push({
                     leagueId: objectIdLeagueId,
@@ -972,7 +1009,6 @@ const checkAndCompleteLeague = async (req, leagueId) => {
             }
 
             await Fixture.insertMany(nextRoundFixtures);
-
             league.currentMatchday = nextMatchdayNumber;
             await league.save();
 
@@ -983,31 +1019,71 @@ const checkAndCompleteLeague = async (req, leagueId) => {
                 isRead: false,
                 createdAt: new Date()
             });
-
             return;
         }
 
         // --- HANDLER B: CLASSIC TOURNAMENTS LEG STANDARDS ---
-       if (formatType === 'classic') {
-            // Fetch all fixtures for this league to analyze the matchday milestones
+        // --- HANDLER B: CLASSIC TOURNAMENTS LEG STANDARDS ---
+        if (formatType === 'classic') {
             const totalFixtures = await Fixture.find({ leagueId: objectIdLeagueId });
             const activeMatchday = league.currentMatchday || 1;
 
-            // Isolate matches belonging strictly to the current active week
             const currentRoundMatches = totalFixtures.filter(f => f.matchday === activeMatchday);
             const confirmedMatchesInRound = currentRoundMatches.filter(f => f.status === 'confirmed');
 
-            // 🚀 STEP 1: Advance matchday only if ALL matches for the current round are confirmed
             if (currentRoundMatches.length > 0 && confirmedMatchesInRound.length === currentRoundMatches.length) {
-                
-                // Determine the absolute max matchday available in the generated fixtures
                 const uniqueMatchdays = [...new Set(totalFixtures.map(f => f.matchday))].sort((a, b) => a - b);
                 const maxLeagueMatchday = uniqueMatchdays.length > 0 ? uniqueMatchdays[uniqueMatchdays.length - 1] : 1;
 
                 if (activeMatchday >= maxLeagueMatchday) {
-                    // Absolute end of the line: Mark league as fully completed
                     league.status = 'completed';
                     await league.save();
+
+                    // 🟢 CALCULATE CLASSIC STANDINGS DYNAMICALLY FROM FIXTURES
+                    const statsMap = {};
+                    league.players.forEach(p => {
+                        statsMap[p._id.toString()] = { 
+                            userId: p._id.toString(), 
+                            username: p.username, 
+                            teamName: 'Club Owner', 
+                            points: 0, 
+                            gd: 0 
+                        };
+                    });
+
+                    // Parse all confirmed fixtures to assign points and goal differences
+                    const allConfirmed = totalFixtures.filter(f => f.status === 'confirmed');
+                    allConfirmed.forEach(f => {
+                        const idA = f.playerA?.toString();
+                        const idB = f.playerB?.toString();
+                        
+                        if (statsMap[idA] && statsMap[idB]) {
+                            statsMap[idA].gd += (f.playerAScore - f.playerBScore);
+                            statsMap[idB].gd += (f.playerBScore - f.playerAScore);
+                            
+                            if (f.playerAScore > f.playerBScore) statsMap[idA].points += 3;
+                            else if (f.playerBScore > f.playerAScore) statsMap[idB].points += 3;
+                            else { statsMap[idA].points += 1; statsMap[idB].points += 1; }
+                        }
+                    });
+
+                    // Sort to determine 1st, 2nd, and 3rd place rankings
+                    const sortedStandings = Object.values(statsMap).sort((a, b) => b.points - a.points || b.gd - a.gd);
+
+                    const podiumData = {
+                        winner: sortedStandings[0] ? { userId: sortedStandings[0].userId, username: sortedStandings[0].username, teamName: sortedStandings[0].teamName } : null,
+                        runnerUp: sortedStandings[1] ? { userId: sortedStandings[1].userId, username: sortedStandings[1].username, teamName: sortedStandings[1].teamName } : null,
+                        thirdPlace: sortedStandings[2] ? { userId: sortedStandings[2].userId, username: sortedStandings[2].username, teamName: sortedStandings[2].teamName } : null
+                    };
+
+                    await HallOfFame.create({
+                        leagueId: league._id,
+                        leagueName: league.name,
+                        formatType: league.tournamentFormat || 'classic',
+                        isPaid: league.isPaid || false,
+                        prizePool: league.prizePool || 0,
+                        podium: podiumData
+                    });
 
                     await pushAndEmitNotification(req, league.players, {
                         _id: new mongoose.Types.ObjectId().toString(),
@@ -1017,12 +1093,10 @@ const checkAndCompleteLeague = async (req, leagueId) => {
                         createdAt: new Date()
                     });
                 } else {
-                    // Increment the round sequence counter safely by 1
                     const nextMatchdayNumber = activeMatchday + 1;
                     league.currentMatchday = nextMatchdayNumber;
                     await league.save();
 
-                    // Alert all league participants instantly that the next round's games are live
                     await pushAndEmitNotification(req, league.players, {
                         _id: new mongoose.Types.ObjectId().toString(),
                         message: `📅 MATCHDAY ADVANCED: Round ${nextMatchdayNumber} Fixtures inside "${league.name}" are officially live! Run your games now.`,
@@ -1034,13 +1108,11 @@ const checkAndCompleteLeague = async (req, leagueId) => {
             }
             return;
         }
-
-        // ---  HANDLER C: NEW GROUP STAGE + KNOCKOUT INTELLIGENT AUTOMATION ENGINE ---
+        // --- HANDLER C: GROUP STAGE + KNOCKOUT INTELLIGENT AUTOMATION ENGINE ---
         if (formatType === 'group_knockout' || formatType.includes('group')) {
             const totalFixtures = await Fixture.find({ leagueId: objectIdLeagueId });
             const activeMatchday = league.currentMatchday || 1;
 
-            // Isolate group stage fixtures versus bracket knockout fixtures
             const groupStageFixtures = totalFixtures.filter(f => !f.stageType || f.stageType === 'group_stage');
             const uniqueGroupMatchdays = [...new Set(groupStageFixtures.map(f => f.matchday))].sort((a, b) => a - b);
             const maxGroupMatchday = uniqueGroupMatchdays.length > 0 ? uniqueGroupMatchdays[uniqueGroupMatchdays.length - 1] : 3;
@@ -1048,12 +1120,10 @@ const checkAndCompleteLeague = async (req, leagueId) => {
             const currentRoundMatches = totalFixtures.filter(f => f.matchday === activeMatchday);
             const confirmedMatchesInRound = currentRoundMatches.filter(f => f.status === 'confirmed');
 
-            // Gatekeeping block check: Stop if the current week isn't finished playing yet
             if (currentRoundMatches.length === 0 || confirmedMatchesInRound.length !== currentRoundMatches.length) {
                 return;
             }
 
-            // Scenario 1: We are still grinding inside the Group Stage pool play
             if (activeMatchday < maxGroupMatchday) {
                 const nextMatchdayNumber = activeMatchday + 1;
                 league.currentMatchday = nextMatchdayNumber;
@@ -1069,9 +1139,7 @@ const checkAndCompleteLeague = async (req, leagueId) => {
                 return;
             }
 
-            // Scenario 2: Group stages are completely over! Transition to Knockouts / Play-offs
             if (activeMatchday === maxGroupMatchday) {
-                const leagueData = await League.findById(objectIdLeagueId).populate('players', 'username');
                 const playerGroupMap = {};
                 totalFixtures.forEach(f => {
                     const idA = f.playerA?._id ? f.playerA._id.toString() : f.playerA?.toString();
@@ -1081,7 +1149,7 @@ const checkAndCompleteLeague = async (req, leagueId) => {
                 });
 
                 const standingsMap = {};
-                leagueData.players.forEach(p => {
+                league.players.forEach(p => {
                     standingsMap[p._id.toString()] = { playerId: p._id, username: p.username, groupLabel: playerGroupMap[p._id.toString()] || 'A', points: 0, gd: 0 };
                 });
 
@@ -1117,7 +1185,7 @@ const checkAndCompleteLeague = async (req, leagueId) => {
                         else knockedOut.push(row.playerId);
                     });
                 });
-//   Move notifications up here so they ALWAYS fire when groups conclude
+
                 if (knockedOut.length > 0) {
                     await pushAndEmitNotification(req, knockedOut, {
                         _id: new mongoose.Types.ObjectId().toString(),
@@ -1137,11 +1205,10 @@ const checkAndCompleteLeague = async (req, leagueId) => {
                         createdAt: new Date()
                     });
                 }
-                // Check if direct survivors hit a perfect power of two bracket scale size rule
+
                 const countOfSurvivors = survivors.length;
                 const isPowerOfTwo = countOfSurvivors > 0 && (countOfSurvivors & (countOfSurvivors - 1)) === 0;
 
-                // THE WILDCARD EXTRACTION BRANCH: Activate play-off if direct qualifiers have irregular counts (e.g., 12 players)
                 if (!isPowerOfTwo && thirdPlaceWildcards.length >= 2) {
                     const nextMatchdayNumber = activeMatchday + 1;
                     let playOffFixtures = [];
@@ -1152,7 +1219,7 @@ const checkAndCompleteLeague = async (req, leagueId) => {
                             leagueId: objectIdLeagueId,
                             matchday: nextMatchdayNumber,
                             roundName: "Wildcard Play-off",
-                            stageType: 'wildcard_stage', // Unique structural identifier tag
+                            stageType: 'wildcard_stage',
                             label: `WILDCARD_M${i + 1}`,
                             playerA: thirdPlaceWildcards[i],
                             playerB: thirdPlaceWildcards[thirdPlaceWildcards.length - 1 - i],
@@ -1167,19 +1234,8 @@ const checkAndCompleteLeague = async (req, leagueId) => {
                     await Fixture.insertMany(playOffFixtures);
                     league.currentMatchday = nextMatchdayNumber;
                     await league.save();
-
-                    // Alert players to check the newly spawned play-off round
-                    await pushAndEmitNotification(req, thirdPlaceWildcards, {
-                        _id: new mongoose.Types.ObjectId().toString(),
-                        message: `🔥 WILDCARD LINE ACTIVATED: You finished 3rd in your pool and qualified for the high-stakes Wildcard Play-off round inside "${league.name}"! Run your survival pairing match now.`,
-                        type: "general",
-                        isRead: false,
-                        createdAt: new Date()
-                    });
                     return;
                 }
-
-               
 
                 const nextMatchdayNumber = activeMatchday + 1;
                 const matchesCount = survivors.length / 2;
@@ -1209,17 +1265,12 @@ const checkAndCompleteLeague = async (req, leagueId) => {
                 return;
             }
 
-            // Scenario 3: Handling progression after the transitional Wildcard stage / deep Knockout stages
             if (activeMatchday > maxGroupMatchday) {
                 const wildcardFixtures = totalFixtures.filter(f => f.stageType === 'wildcard_stage');
                 const isWildcardMatchdayActive = wildcardFixtures.length > 0 && wildcardFixtures[0].matchday === activeMatchday;
 
-                //  POST-WILDCARD MERGE LOGIC LAYER: Runs when the wildcard play-off matches finish playing
                 if (isWildcardMatchdayActive) {
                     const wildcardWinners = currentRoundMatches.map(m => m.playerAScore > m.playerBScore ? m.playerA : m.playerB);
-                    
-                    // Re-compile the original Top 2 direct qualifiers who were resting during the wildcard round
-                    const leagueData = await League.findById(objectIdLeagueId).populate('players', 'username');
                     const playerGroupMap = {};
                     totalFixtures.forEach(f => {
                         const idA = f.playerA?._id ? f.playerA._id.toString() : f.playerA?.toString();
@@ -1229,7 +1280,7 @@ const checkAndCompleteLeague = async (req, leagueId) => {
                     });
 
                     const standingsMap = {};
-                    leagueData.players.forEach(p => {
+                    league.players.forEach(p => {
                         standingsMap[p._id.toString()] = { playerId: p._id, points: 0, gd: 0, groupLabel: playerGroupMap[p._id.toString()] || 'A' };
                     });
 
@@ -1261,12 +1312,10 @@ const checkAndCompleteLeague = async (req, leagueId) => {
                         });
                     });
 
-                    // Merge direct qualifiers with our new wildcard play-off winners
                     const finalKnockoutPool = [...directSurvivors, ...wildcardWinners];
                     const nextMatchdayNumber = activeMatchday + 1;
                     const nextMatchesCount = finalKnockoutPool.length / 2;
                     
-                    // Determine the bracket round name dynamically based on the total team count
                     let roundName = nextMatchesCount === 1 ? "Finals" : nextMatchesCount === 2 ? "Semifinals" : nextMatchesCount === 4 ? "Quarterfinals" : `Round of ${finalKnockoutPool.length}`;
 
                     let mergedBracketFixtures = [];
@@ -1290,18 +1339,9 @@ const checkAndCompleteLeague = async (req, leagueId) => {
                     await Fixture.insertMany(mergedBracketFixtures);
                     league.currentMatchday = nextMatchdayNumber;
                     await league.save();
-
-                    await pushAndEmitNotification(req, league.players, {
-                        _id: new mongoose.Types.ObjectId().toString(),
-                        message: `🪓 MAIN BRACKETS SPAWNED: The official ${roundName} stage fixtures inside "${league.name}" are loaded! Check the leaderboard tree now.`,
-                        type: "general",
-                        isRead: false,
-                        createdAt: new Date()
-                    });
                     return;
                 }
 
-                // Standard implementation: Progressive advancement inside deep sudden-death knockout trees
                 const knockoutFixtures = totalFixtures.filter(f => f.stageType === 'knockout_stage');
                 const currentRoundKnockouts = knockoutFixtures.filter(f => f.matchday === activeMatchday);
                 
@@ -1312,6 +1352,38 @@ const checkAndCompleteLeague = async (req, leagueId) => {
                 if (isFinalsMatch) {
                     league.status = 'completed';
                     await league.save();
+
+                    const finalMatch = currentRoundKnockouts[0];
+                    const isPlayerAWinner = finalMatch.playerAScore > finalMatch.playerBScore;
+                    
+                    const rawWinnerId = (isPlayerAWinner ? finalMatch.playerA : finalMatch.playerB)?.toString();
+                    const rawRunnerUpId = (isPlayerAWinner ? finalMatch.playerB : finalMatch.playerA)?.toString();
+
+                    const winnerUser = league.players.find(p => p._id.toString() === rawWinnerId);
+                    const runnerUpUser = league.players.find(p => p._id.toString() === rawRunnerUpId);
+
+                    const podiumData = {
+                        winner: { 
+                            userId: rawWinnerId || 'N/A', 
+                            username: winnerUser ? winnerUser.username : 'Champion', 
+                            teamName: 'Cup Winner' 
+                        },
+                        runnerUp: { 
+                            userId: rawRunnerUpId || 'N/A', 
+                            username: runnerUpUser ? runnerUpUser.username : 'Runner-Up', 
+                            teamName: 'Finalist' 
+                        },
+                        thirdPlace: { userId: 'N/A', username: 'N/A', teamName: 'N/A' }
+                    };
+
+                    await HallOfFame.create({
+                        leagueId: league._id,
+                        leagueName: league.name,
+                        formatType: league.tournamentFormat || 'group_knockout', // 🟢 FIX: Map database field cleanly
+                        isPaid: league.isPaid || false,
+                        prizePool: league.prizePool || 0,
+                        podium: podiumData
+                    });
 
                     await pushAndEmitNotification(req, league.players, {
                         _id: new mongoose.Types.ObjectId().toString(),
@@ -1354,14 +1426,6 @@ const checkAndCompleteLeague = async (req, leagueId) => {
                 await Fixture.insertMany(nextRoundFixtures);
                 league.currentMatchday = nextMatchdayNumber;
                 await league.save();
-
-                await pushAndEmitNotification(req, league.players, {
-                    _id: new mongoose.Types.ObjectId().toString(),
-                    message: `🪓 SUDDEN DEATH BRACKET UPDATED: The next knockout tier (${nextRoundName}) inside "${league.name}" is ready!`,
-                    type: "general",
-                    isRead: false,
-                    createdAt: new Date()
-                });
             }
         }
 
@@ -1369,7 +1433,6 @@ const checkAndCompleteLeague = async (req, leagueId) => {
         console.error("Critical failure executing automated progression pipeline loops:", error);
     }
 };
-
 // Subsidiary structural handler helper managing nested post-group bracket escalations
 const handleKnockoutProgressionCheck = async (req, league, totalFixtures) => {
     const activeMatchday = league.currentMatchday || 1;

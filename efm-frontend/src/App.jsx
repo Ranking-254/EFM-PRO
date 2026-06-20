@@ -25,6 +25,7 @@ import TermsOfServicePage from './pages/TermsOfServicePage';
 import PrivacyPolicyPage from './pages/PrivacyPolicyPage';
 import DashboardPage from './pages/DashboardPage';
 import AdminLoginPage from './pages/AdminLoginPage';
+import HallOfFamePage from './pages/HallofFame';
 
 // Dynamic API Endpoint Base Route Selector
 const API_BASE_URL = window.location.hostname === 'localhost' 
@@ -314,6 +315,12 @@ function AppContent() {
               ) : (
                 <LeagueTable leagueId={selectedLeagueId} currentUser={currentUser} />
               )}
+            </div>
+          } />
+          {/* Hall of Fame Route */}
+          <Route path="/hall-of-fame" element={
+            <div className="w-full space-y-8">
+              <HallOfFamePage />
             </div>
           } />
 

@@ -14,6 +14,8 @@ dotenv.config();
 const connectDB = require('./config/db');
 const leagueRoutes = require('./routes/league');
 const adminRoutes = require('./routes/admin');
+const HallOfFame = require('./models/HallOfFame');
+const hallOfFameRouter = require('./routes/hallOfFame');
 const Sentry = require("@sentry/node"); // Import Sentry instance for error tracking
 
 
@@ -115,6 +117,8 @@ const authRoutes = require('./routes/auth');
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/leagues', leagueRoutes);
 app.use('/api/v1/admin', adminRoutes);
+app.use('/api/v1/halloffame', hallOfFameRouter);
+app.use('/api/v1', hallOfFameRouter);
 
 // Base Root Route
 app.get('/', (req, res) => {
@@ -124,6 +128,8 @@ app.get('/', (req, res) => {
         message: "Welcome to the EFM-PRO Core Backend Engine." 
     });
 });
+
+
 
 // 🎯 SENTRY ERROR HANDLER MIDDLEWARE
 // This must be positioned AFTER all controllers/routes, but BEFORE any custom error handling layers

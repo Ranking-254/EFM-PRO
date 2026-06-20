@@ -48,17 +48,17 @@ const SupportPage = ({ onNavigate }) => {
 
                 <div className="bg-[#0f131c] border border-slate-800 rounded-2xl p-5 space-y-3 hover:border-cyan-500/30 transition-all">
                     <div className="text-2xl">🌐</div>
-                    <h4 className="text-sm font-black text-white">Discord</h4>
+                    <h4 className="text-sm font-black text-white">WhatsApp Group</h4>
                     <p className="text-xs text-slate-400">
-                        Join our Discord community for real-time help and updates.
+                        Join our whatsapp community for real-time help and updates.
                     </p>
                     <a
-                        href="https://discord.gg"
+                        href="https://chat.whatsapp.com/YOUR_GROUP_INVITE_CODE_HERE"
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-2 bg-[#5865F2] hover:bg-[#4752c4] text-white text-xs font-black uppercase tracking-wider py-2.5 px-4 rounded-xl transition-all"
                     >
-                        Join Discord
+                        Join group
                     </a>
                 </div>
 

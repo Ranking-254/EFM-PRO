@@ -117,7 +117,6 @@ const authRoutes = require('./routes/auth');
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/leagues', leagueRoutes);
 app.use('/api/v1/admin', adminRoutes);
-app.use('/api/v1/halloffame', hallOfFameRouter);
 app.use('/api/v1', hallOfFameRouter);
 
 // Base Root Route

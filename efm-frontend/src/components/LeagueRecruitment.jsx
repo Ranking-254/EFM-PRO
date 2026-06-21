@@ -529,7 +529,7 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey, s
 </li>
                                     <li className="flex items-start gap-2">
                                         <span className="text-cyan-400 mt-0.5">✔</span>
-                                        <span><strong className="text-slate-200">Result Submission:</strong> Both managers are expected to upload screenshots or match confirmations via the Matchday Hub interface promptly.</span>
+                                        <span><strong className="text-slate-200">Result Submission:</strong> Both managers are expected to upload match confirmations via the Matchday Hub interface promptly.</span>
                                     </li>
                                     <li className="flex items-start gap-2">
                                         <span className="text-cyan-400 mt-0.5">✔</span>

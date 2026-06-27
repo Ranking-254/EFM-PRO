@@ -2,22 +2,22 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 
-const API_BASE_URL = window.location.hostname === 'localhost' 
-    ? 'http://localhost:5000/api/v1' 
+const API_BASE_URL = window.location.hostname === 'localhost'
+    ? 'http://localhost:5000/api/v1'
     : 'https://efm-pro.onrender.com/api/v1';
 
 const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey, setLoginModalOpen }) => {
     const [leagues, setLeagues] = useState([]);
     const [loading, setLoading] = useState(true);
     const [joining, setJoining] = useState(null);
-    const [isReserving, setIsReserving] = useState(false); 
+    const [isReserving, setIsReserving] = useState(false);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
-    
+
     // Core Filter States
     const [filter, setFilter] = useState('all'); // 'all', 'recruiting', 'active'
     const [formatFilter, setFormatFilter] = useState('all'); // 'all', 'classic', 'knockout', 'group_knockout'
-    
+
     const [userBookingState, setUserBookingState] = useState(currentUser?.hasBookedUpcoming || false);
 
     // MODAL STATE ENGINE
@@ -39,10 +39,10 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey, s
         }
     };
 
-   const triggerWhatsAppShare = (e, leagueId, leagueName, status) => {
+    const triggerWhatsAppShare = (e, leagueId, leagueName, status) => {
         e.stopPropagation();
         const deepResourceUrl = `${window.location.origin}/tournaments/${leagueId}`;
-        
+
         // Dynamic messaging template based on tournament recruitment status
         const messageTitle = status === 'recruiting'
             ? `📝 *EFM-PRO SQUAD SLOTS OPEN* 📝\n\nSlots are open for the upcoming season of: *${leagueName}*!`
@@ -157,7 +157,7 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey, s
     const executeRulesAcknowledge = () => {
         const { league, targetAction } = rulesModal;
         setRulesModal({ isOpen: false, league: null, targetAction: null });
-        
+
         if (targetAction === 'standings' && onViewLeague && league) {
             onViewLeague(league._id, 'standings', league.tournamentFormat);
         }
@@ -170,7 +170,7 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey, s
     // 🚀 DUAL LAYER DYNAMIC FILTER HOOK:
     const filteredLeagues = leagues.filter(l => {
         const matchesStatus = filter === 'all' || l.status === filter;
-        
+
         const formatClean = String(l.tournamentFormat || 'classic').trim().toLowerCase();
         let resolvedFormat = 'classic';
         if (formatClean === 'knockout') resolvedFormat = 'knockout';
@@ -212,32 +212,29 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey, s
 
             {/* --- FILTER CONTROL HUD OVERLAY --- */}
             <div className="space-y-3 bg-[#070a0f] border border-slate-900 p-4 rounded-2xl shadow-xl">
-                
+
                 {/* CAMPAIGN STATUS CONTROL ROW */}
                 <div className="flex flex-col gap-1.5">
                     <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 font-mono">Campaign Status:</label>
                     <div className="flex items-center gap-3">
                         <button
                             onClick={() => setFilter('all')}
-                            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all border ${
-                                filter === 'all' ? 'bg-cyan-400 text-slate-950 border-cyan-400 font-extrabold' : 'bg-[#0f131c] text-slate-400 border-slate-800 hover:border-cyan-500/30'
-                            }`}
+                            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all border ${filter === 'all' ? 'bg-cyan-400 text-slate-950 border-cyan-400 font-extrabold' : 'bg-[#0f131c] text-slate-400 border-slate-800 hover:border-cyan-500/30'
+                                }`}
                         >
                             All
                         </button>
                         <button
                             onClick={() => setFilter('recruiting')}
-                            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all border ${
-                                filter === 'recruiting' ? 'bg-cyan-400 text-slate-950 border-cyan-400 font-extrabold' : 'bg-[#0f131c] text-slate-400 border-slate-800 hover:border-cyan-500/30'
-                            }`}
+                            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all border ${filter === 'recruiting' ? 'bg-cyan-400 text-slate-950 border-cyan-400 font-extrabold' : 'bg-[#0f131c] text-slate-400 border-slate-800 hover:border-cyan-500/30'
+                                }`}
                         >
                             Recruiting
                         </button>
                         <button
                             onClick={() => setFilter('active')}
-                            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all border ${
-                                filter === 'active' ? 'bg-gradient-to-r from-emerald-500 to-[#a3e635] text-slate-950 border-emerald-400 font-extrabold' : 'bg-[#0f131c] text-slate-400 border-slate-800 hover:border-[#a3e635]/30'
-                            }`}
+                            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all border ${filter === 'active' ? 'bg-gradient-to-r from-emerald-500 to-[#a3e635] text-slate-950 border-emerald-400 font-extrabold' : 'bg-[#0f131c] text-slate-400 border-slate-800 hover:border-[#a3e635]/30'
+                                }`}
                         >
                             Active
                         </button>
@@ -247,7 +244,7 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey, s
                 {/* 🚀 TOURNAMENT STYLE LAYOUT FORMAT FILTERS PANEL */}
                 <div className="flex flex-col gap-1.5 pt-2 border-t border-slate-900/60">
                     <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 font-mono">Tournament Rules Format:</label>
-                    
+
                     {/* 📱 Mobile Dropdown Switch Select Selector Container (Hidden on Desktop) */}
                     <div className="block sm:hidden w-full relative">
                         <select
@@ -274,11 +271,10 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey, s
                             <button
                                 key={fmt.key}
                                 onClick={() => setFormatFilter(fmt.key)}
-                                className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all border shrink-0 ${
-                                    formatFilter === fmt.key
+                                className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all border shrink-0 ${formatFilter === fmt.key
                                         ? 'bg-slate-800 border-slate-700 text-cyan-400 font-black shadow-inner'
                                         : 'bg-[#0f131c] text-slate-400 border-slate-900/60 hover:text-slate-200'
-                                }`}
+                                    }`}
                             >
                                 {fmt.label}
                             </button>
@@ -301,13 +297,12 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey, s
                     <button
                         onClick={handleGlobalReserveSpot}
                         disabled={userBookingState || isReserving}
-                        className={`sm:w-auto w-full whitespace-nowrap py-3 px-5 rounded-xl font-black text-xs uppercase tracking-wider transition-all border ${
-                            userBookingState 
-                                ? 'bg-slate-900/40 border-slate-800 text-slate-500 cursor-not-allowed' 
+                        className={`sm:w-auto w-full whitespace-nowrap py-3 px-5 rounded-xl font-black text-xs uppercase tracking-wider transition-all border ${userBookingState
+                                ? 'bg-slate-900/40 border-slate-800 text-slate-500 cursor-not-allowed'
                                 : isReserving
-                                ? 'bg-amber-400/40 border-amber-400 text-slate-950 cursor-wait'
-                                : 'bg-amber-400 hover:bg-amber-300 text-slate-950 border-amber-400 shadow-lg shadow-amber-400/10 active:scale-[0.98]'
-                        }`}
+                                    ? 'bg-amber-400/40 border-amber-400 text-slate-950 cursor-wait'
+                                    : 'bg-amber-400 hover:bg-amber-300 text-slate-950 border-amber-400 shadow-lg shadow-amber-400/10 active:scale-[0.98]'
+                            }`}
                     >
                         {isReserving ? 'Reserving...' : userBookingState ? '✓ Slot Reserved' : 'Reserve Next Season Slot'}
                     </button>
@@ -339,7 +334,7 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey, s
                                             <h4 className="text-lg font-black text-white tracking-tight group-hover:text-cyan-400 transition-colors max-w-[75%] truncate">
                                                 {league.name}
                                             </h4>
-                                            
+
                                             <div className="flex items-center gap-2 mt-1">
                                                 <button
                                                     onClick={() => setRulesModal({ isOpen: true, league, targetAction: 'info' })}
@@ -385,9 +380,8 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey, s
                                         </div>
                                         <div className="w-full bg-slate-900 rounded-lg h-2 overflow-hidden">
                                             <div
-                                                className={`h-full rounded-lg transition-all duration-500 ${
-                                                    league.status === 'active' ? 'bg-[#a3e635]' : pct >= 70 ? 'bg-amber-400' : 'bg-cyan-400'
-                                                }`}
+                                                className={`h-full rounded-lg transition-all duration-500 ${league.status === 'active' ? 'bg-[#a3e635]' : pct >= 70 ? 'bg-amber-400' : 'bg-cyan-400'
+                                                    }`}
                                                 style={{ width: `${pct}%` }}
                                             />
                                         </div>
@@ -401,17 +395,16 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey, s
                                     )}
                                 </div>
                                 <div className="pt-3 border-t border-slate-900/60 flex items-center justify-between gap-2 bg-[#090d14]/40 p-2 rounded-xl">
-                                    <button 
+                                    <button
                                         onClick={(e) => triggerCopyLink(e, league._id)}
-                                        className={`flex-1 text-[10px] font-black uppercase tracking-wider py-2 rounded-lg font-mono border transition-all ${
-                                            copyStateId === league._id 
-                                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' 
+                                        className={`flex-1 text-[10px] font-black uppercase tracking-wider py-2 rounded-lg font-mono border transition-all ${copyStateId === league._id
+                                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
                                                 : 'bg-[#0f131c] text-slate-400 border-slate-800 hover:border-slate-700 text-slate-300'
-                                        }`}
+                                            }`}
                                     >
                                         {copyStateId === league._id ? '✓ Copied' : '🔗 Copy Link'}
                                     </button>
-                                    <button 
+                                    <button
                                         onClick={(e) => triggerWhatsAppShare(e, league._id, league.name)}
                                         className="flex-1 text-[10px] font-black uppercase tracking-wider py-2 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500 hover:text-slate-950 transition-all font-mono"
                                     >
@@ -421,7 +414,7 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey, s
 
                                 <div className="pt-4">
                                     {league.status === 'recruiting' && !isFull ? (
-                                       <button
+                                        <button
                                             onClick={() => {
                                                 if (!currentUser) {
                                                     // Trigger your login modal handler directly here
@@ -436,15 +429,14 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey, s
                                                 }
                                             }}
                                             disabled={isJoining || (currentUser && hasJoined)}
-                                            className={`w-full text-xs font-black uppercase tracking-wider py-3 rounded-xl transition-all border ${
-                                                hasJoined
+                                            className={`w-full text-xs font-black uppercase tracking-wider py-3 rounded-xl transition-all border ${hasJoined
                                                     ? 'bg-[#a3e635]/20 text-[#a3e635] border-[#a3e635]/30 cursor-default'
                                                     : !currentUser
-                                                    ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-400 hover:bg-cyan-500 hover:text-slate-950 shadow-lg shadow-cyan-500/[0.05]' // Active glow for guests!
-                                                    : isJoining
-                                                    ? 'bg-cyan-400/50 text-slate-950 border border-cyan-400'
-                                                    : 'bg-cyan-400 hover:bg-cyan-300 text-slate-950 border-cyan-400 shadow-lg shadow-cyan-400/10 active:scale-[0.98]'
-                                            }`}
+                                                        ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-400 hover:bg-cyan-500 hover:text-slate-950 shadow-lg shadow-cyan-500/[0.05]' // Active glow for guests!
+                                                        : isJoining
+                                                            ? 'bg-cyan-400/50 text-slate-950 border border-cyan-400'
+                                                            : 'bg-cyan-400 hover:bg-cyan-300 text-slate-950 border-cyan-400 shadow-lg shadow-cyan-400/10 active:scale-[0.98]'
+                                                }`}
                                         >
                                             {isJoining ? 'Joining...' : hasJoined ? 'Joined ✓' : !currentUser ? '🔒 Login to Join Bracket' : 'Join Bracket'}
                                         </button>
@@ -477,7 +469,7 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey, s
             {rulesModal.isOpen && rulesModal.league && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
                     <div className="w-full max-w-xl bg-[#121824] border border-slate-800 rounded-3xl shadow-2xl flex flex-col max-h-[85vh] animate-scale-up">
-                        
+
                         <div className="p-6 border-b border-slate-800 flex items-center justify-between bg-[#161d2b] rounded-t-3xl">
                             <div className="space-y-1">
                                 <span className="text-[10px] font-black tracking-widest text-cyan-400 uppercase bg-cyan-500/10 px-2.5 py-1 rounded-md border border-cyan-500/20">
@@ -517,19 +509,19 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey, s
                                     🎮 Gameplay Instructions & Squad Limits
                                 </h5>
                                 <ul className="space-y-2 text-xs font-medium text-slate-400 list-none pl-0">
-                                   <li className="flex items-start gap-2">
-    <span className="text-cyan-400 mt-0.5">✔</span>
-    <span>
-        <strong className="text-slate-200">Team Strength Cap:</strong> Your active squad ratings must strictly stay within{' '}
-        <span className="text-cyan-400 font-bold">
-            Max STR: {rulesModal.league.maxStrengthLimit || 'Unlimited'}
-        </span>{' '}
-        limits.
-    </span>
-</li>
                                     <li className="flex items-start gap-2">
                                         <span className="text-cyan-400 mt-0.5">✔</span>
-                                        <span><strong className="text-slate-200">Result Submission:</strong> Both managers are expected to upload match confirmations via the Matchday Hub interface promptly.</span>
+                                        <span>
+                                            <strong className="text-slate-200">Team Strength Cap:</strong> Your active squad ratings must strictly stay within{' '}
+                                            <span className="text-cyan-400 font-bold">
+                                                Max STR: {rulesModal.league.maxStrengthLimit || 'Unlimited'}
+                                            </span>{' '}
+                                            limits.
+                                        </span>
+                                    </li>
+                                    <li className="flex items-start gap-2">
+                                        <span className="text-cyan-400 mt-0.5">✔</span>
+                                        <span><strong className="textg-slate-200">Result Submission:</strong> Both managers are expected to upload match confirmations via the Matchday Hub interface promptly.</span>
                                     </li>
                                     <li className="flex items-start gap-2">
                                         <span className="text-cyan-400 mt-0.5">✔</span>
@@ -555,7 +547,7 @@ const TournamentHub = ({ currentUser, onJoinSuccess, onViewLeague, refreshKey, s
                             >
                                 {rulesModal.targetAction === 'standings' ? 'I Understand, View Standings ✓' : 'Close Briefing'}
                             </button>
-                        </div> 
+                        </div>
 
                     </div>
                 </div>

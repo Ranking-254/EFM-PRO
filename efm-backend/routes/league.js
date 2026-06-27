@@ -907,6 +907,73 @@ router.get('/:id/roster', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
+// ========================================================
+// @desc    Admin Only: Substitute a player in a league roster and update fixtures
+// @route   POST /api/v1/leagues/substitute-player
+// ========================================================
+// 🔄 MID-SEASON MANAGER SUBSTITUTION / TAKEOVER ENDPOINT
+router.post('/substitute-player', async (req, res) => {
+    try {
+        const { leagueId, oldPlayerId, newPlayerId } = req.body;
+
+        if (!leagueId || !oldPlayerId || !newPlayerId) {
+            return res.status(400).json({ success: false, error: "Missing required IDs." });
+        }
+
+        // 1. Fetch the target league
+        const league = await League.findById(leagueId);
+        if (!league) {
+            return res.status(404).json({ success: false, error: "League not found." });
+        }
+
+        // 🟢 2. NEW: Resolve newPlayerId if the admin typed a raw username string instead of an ObjectId
+        let resolvedNewPlayerId = newPlayerId;
+        if (!mongoose.Types.ObjectId.isValid(newPlayerId)) {
+            // Assuming your User model is imported as User. Adjust if named differently (e.g., Player)
+            const targetUser = await User.findOne({ username: newPlayerId.trim() });
+            if (!targetUser) {
+                return res.status(404).json({ success: false, error: `Manager matching username "${newPlayerId}" not found in system.` });
+            }
+            resolvedNewPlayerId = targetUser._id.toString();
+        }
+
+        // 3. Structural Swap: Replace old player ID with the resolved new player ID in the roster array
+        const playerIndex = league.players.map(id => id.toString()).indexOf(oldPlayerId);
+        if (playerIndex === -1) {
+            return res.status(400).json({ success: false, error: "Old player not found in this league's roster." });
+        }
+        
+        // Replace slot position safely with a proper ObjectId reference
+        league.players[playerIndex] = resolvedNewPlayerId;
+        await league.save();
+
+        // 4. Fixture Swap: Update playerA fields
+        await Fixture.updateMany(
+            { leagueId: league._id, playerA: oldPlayerId },
+            { $set: { playerA: resolvedNewPlayerId } }
+        );
+
+        // 5. Fixture Swap: Update playerB fields
+        await Fixture.updateMany(
+            { leagueId: league._id, playerB: oldPlayerId },
+            { $set: { playerB: resolvedNewPlayerId } }
+        );
+
+        // 6. Recalculate Standings natively so the replacement manager inherits history instantly
+        if (typeof checkAndCompleteLeague === 'function') {
+            await checkAndCompleteLeague(req, league._id);
+        }
+
+        res.status(200).json({
+            success: true,
+            message: `Substitution completed successfully! New manager has taken over the slot's match history.`
+        });
+
+    } catch (err) {
+        console.error("Substitution pipeline error:", err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
 
 
 // Core automation bracket engine advancement loop logic block

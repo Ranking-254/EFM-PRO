@@ -17,15 +17,17 @@ const LeagueRosterModal = ({ league, onClose, onRosterUpdated }) => {
     const [localPlayers, setLocalPlayers] = useState([]);
     const [localStatus, setLocalStatus] = useState(league?.status || 'recruiting');
 
+    // UI State for managing mid-season substitutions inline
+    const [subbingPlayerId, setSubbingPlayerId] = useState(null);
+    const [newPlayerIdentifier, setNewPlayerIdentifier] = useState('');
+
     const forceSyncData = async () => {
         try {
             setLoading(true);
             setError('');
             
-            // 🚀 TARGET: Hits our populated backend endpoint directly
             const res = await axios.get(`${API_BASE_URL}/leagues/${league._id}/roster`);
             if (res.data.success) {
-                // Safely commit populated data straight into your state engine
                 setLocalPlayers(res.data.players || []);
                 setLocalStatus(res.data.status || 'recruiting');
             }
@@ -55,7 +57,7 @@ const LeagueRosterModal = ({ league, onClose, onRosterUpdated }) => {
             if (res.data.success) {
                 setSuccess(res.data.message);
                 setIdentifier('');
-                await forceSyncData(); // Force live structural refresh
+                await forceSyncData(); 
                 if (onRosterUpdated) onRosterUpdated();
             }
         } catch (err) {
@@ -74,7 +76,7 @@ const LeagueRosterModal = ({ league, onClose, onRosterUpdated }) => {
             
             if (res.data.success) {
                 setSuccess(`Successfully wiped @${targetName} from roster settings.`);
-                await forceSyncData(); // Force live list refresh
+                await forceSyncData(); 
                 if (onRosterUpdated) onRosterUpdated();
             }
         } catch (err) {
@@ -84,11 +86,40 @@ const LeagueRosterModal = ({ league, onClose, onRosterUpdated }) => {
         }
     };
 
+    // 🚀 NEW: Mid-Season Sub Action Handler
+    const handleSubstitutePlayer = async (oldPlayerId, oldUsername) => {
+        if (!newPlayerIdentifier.trim()) return;
+        
+        try {
+            setActionLoading(oldPlayerId);
+            setError('');
+            setSuccess('');
+
+            // Hits the exact endpoint configuration we verified in Postman
+            const res = await axios.post(`${API_BASE_URL}/leagues/substitute-player`, {
+                leagueId: league._id,
+                oldPlayerId,
+                newPlayerId: newPlayerIdentifier.trim() // Backend searches via string token/identifier seamlessly
+            });
+
+            if (res.data.success) {
+                setSuccess(`Successfully replaced @${oldUsername} with new manager.`);
+                setSubbingPlayerId(null);
+                setNewPlayerIdentifier('');
+                await forceSyncData(); // Reload fixtures data map automatically
+                if (onRosterUpdated) onRosterUpdated();
+            }
+        } catch (err) {
+            setError(err.response?.data?.error || 'Failed to execute mid-season substitution.');
+        } finally {
+            setActionLoading(null);
+        }
+    };
+
     return (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
             <div className="w-full max-w-md bg-[#0f131c] border border-slate-800 rounded-2xl p-5 shadow-2xl relative text-left">
                 
-                {/* Upper Right Close Utility */}
                 <button 
                     type="button"
                     onClick={onClose}
@@ -103,16 +134,13 @@ const LeagueRosterModal = ({ league, onClose, onRosterUpdated }) => {
                     Manage League Roster
                 </h3>
                 
-                {/* READS THE REAL-TIME LENGTH STATE INSTANTLY */}
                 <p className="text-xs text-cyan-400 font-medium mb-4 font-mono">
                     Group: <span className="text-white">{league.name}</span> ({localPlayers.length}/{league.capacity} Slots filled)
                 </p>
 
-                {/* Status Readout Blocks */}
                 {error && <div className="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs rounded-xl mb-3 font-medium">{error}</div>}
                 {success && <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs rounded-xl mb-3 font-medium">{success}</div>}
 
-                {/* Manual Registration Controls Form */}
                 {localStatus === 'recruiting' && localPlayers.length < league.capacity ? (
                     <form onSubmit={handleAddPlayer} className="mb-5">
                         <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
@@ -140,12 +168,11 @@ const LeagueRosterModal = ({ league, onClose, onRosterUpdated }) => {
                     </div>
                 )}
 
-                {/* Master Active Members Ledger */}
                 <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
                     Registered Managers Ledger
                 </h4>
 
-                <div className="space-y-2 max-h-56 overflow-y-auto pr-1 custom-scrollbar">
+                <div className="space-y-2 max-h-64 overflow-y-auto pr-1 custom-scrollbar">
                     {loading && localPlayers.length === 0 ? (
                         <div className="py-8 text-center text-xs text-slate-500 font-mono animate-pulse">
                             🔄 Running database crosscheck...
@@ -156,7 +183,6 @@ const LeagueRosterModal = ({ league, onClose, onRosterUpdated }) => {
                         </div>
                     ) : (
                         localPlayers.map((player, idx) => {
-                            // 🚀 THE CRITICAL FIX: Extract user fields directly out of the populated response object!
                             const playerId = typeof player === 'object' ? player?._id : player;
                             const usernameDisplay = typeof player === 'object' ? player?.username : `User ID: ...${String(playerId).slice(-6)}`;
                             const strengthDisplay = typeof player === 'object' && player?.teamStrength ? `STR: ${player.teamStrength}` : 'Roster profile synced';
@@ -164,24 +190,67 @@ const LeagueRosterModal = ({ league, onClose, onRosterUpdated }) => {
                             return (
                                 <div 
                                     key={playerId || idx} 
-                                    className="flex items-center justify-between p-2.5 bg-slate-950/60 border border-slate-900 rounded-xl text-xs"
+                                    className="p-2.5 bg-slate-950/60 border border-slate-900 rounded-xl space-y-2"
                                 >
-                                    <div className="flex items-center gap-2 max-w-[65%]">
-                                        <span className="text-cyan-400 font-mono text-[10px] font-bold">[{idx + 1}]</span>
-                                        <div className="truncate">
-                                            <div className="font-black text-slate-200 truncate font-mono tracking-wide">{usernameDisplay}</div>
-                                            <div className="text-[9px] font-mono text-slate-500 font-medium">{strengthDisplay}</div>
+                                    <div className="flex items-center justify-between text-xs">
+                                        <div className="flex items-center gap-2 max-w-[60%]">
+                                            <span className="text-cyan-400 font-mono text-[10px] font-bold">[{idx + 1}]</span>
+                                            <div className="truncate">
+                                                <div className="font-black text-slate-200 truncate font-mono tracking-wide">{usernameDisplay}</div>
+                                                <div className="text-[9px] font-mono text-slate-500 font-medium">{strengthDisplay}</div>
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="flex gap-1.5 shrink-0">
+                                            {/* Contextual Action Button Routing */}
+                                            {localStatus !== 'recruiting' && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        if (subbingPlayerId === playerId) {
+                                                            setSubbingPlayerId(null);
+                                                        } else {
+                                                            setSubbingPlayerId(playerId);
+                                                            setNewPlayerIdentifier('');
+                                                        }
+                                                    }}
+                                                    className="text-[10px] font-black text-cyan-400 hover:text-cyan-300 uppercase tracking-wider bg-cyan-500/5 hover:bg-cyan-500/10 border border-cyan-500/20 px-2 py-1.5 rounded-lg transition-all"
+                                                >
+                                                    {subbingPlayerId === playerId ? 'Cancel' : 'Sub Player'}
+                                                </button>
+                                            )}
+
+                                            <button
+                                                type="button"
+                                                disabled={actionLoading === playerId}
+                                                onClick={() => handleRemovePlayer(playerId, usernameDisplay)}
+                                                className="text-[10px] font-black text-rose-400 hover:text-rose-300 uppercase tracking-wider bg-rose-500/5 hover:bg-rose-500/10 border border-rose-500/20 px-2.5 py-1.5 rounded-lg transition-all disabled:opacity-30"
+                                            >
+                                                {actionLoading === playerId && subbingPlayerId !== playerId ? 'Kicking...' : 'Kick'}
+                                            </button>
                                         </div>
                                     </div>
-                                    
-                                    <button
-                                        type="button"
-                                        disabled={actionLoading === playerId}
-                                        onClick={() => handleRemovePlayer(playerId, usernameDisplay)}
-                                        className="text-[10px] font-black text-rose-400 hover:text-rose-300 uppercase tracking-wider bg-rose-500/5 hover:bg-rose-500/10 border border-rose-500/20 px-2.5 py-1.5 rounded-lg transition-all disabled:opacity-30 shrink-0"
-                                    >
-                                        {actionLoading === playerId ? 'Kicking...' : 'Kick User'}
-                                    </button>
+
+                                    {/* Inline Drawer for New Sub Form */}
+                                    {subbingPlayerId === playerId && (
+                                        <div className="pt-2 border-t border-slate-900/60 flex gap-2 animate-in slide-in-from-top-1 duration-150">
+                                            <input 
+                                                type="text"
+                                                placeholder="New Manager Username / Phone"
+                                                value={newPlayerIdentifier}
+                                                onChange={(e) => setNewPlayerIdentifier(e.target.value)}
+                                                className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-[11px] text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500/40 font-mono"
+                                            />
+                                            <button
+                                                type="button"
+                                                disabled={actionLoading === playerId}
+                                                onClick={() => handleSubstitutePlayer(playerId, usernameDisplay)}
+                                                className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-[10px] font-black uppercase px-3 py-1.5 rounded-lg transition-all tracking-wide shrink-0 disabled:opacity-50"
+                                            >
+                                                {actionLoading === playerId ? 'Saving...' : 'Confirm'}
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                             );
                         })

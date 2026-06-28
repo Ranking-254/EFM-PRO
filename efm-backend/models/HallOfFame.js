@@ -31,4 +31,6 @@ const HallOfFameSchema = new mongoose.Schema({
   concludedAt: { type: Date, default: Date.now },
 });
 
-module.exports = mongoose.model("HallOfFame", HallOfFameSchema);
+// 🟢 Checks if Mongoose already compiled it; if not, compiles it cleanly.
+module.exports =
+  mongoose.models.HallOfFame || mongoose.model("HallOfFame", HallOfFameSchema);

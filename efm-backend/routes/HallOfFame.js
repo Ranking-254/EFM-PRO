@@ -49,7 +49,6 @@ router.post("/force-complete/:leagueId", async (req, res) => {
   try {
     const League = require("../models/League");
     const Fixture = require("../models/Fixture");
-    const HallOfFame = require("../models/HallOfFame");
 
     const leagueId = req.params.leagueId;
     const league = await League.findById(leagueId).populate(

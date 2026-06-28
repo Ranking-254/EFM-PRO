@@ -15,7 +15,7 @@ const connectDB = require("./config/db");
 const leagueRoutes = require("./routes/league");
 const adminRoutes = require("./routes/admin");
 const HallOfFame = require("./models/HallOfFame");
-const hallOfFameRouter = require("./routes/hallofFame");
+const hallOfFameRouter = require("./routes/HallOfFame");
 const Sentry = require("@sentry/node"); // Import Sentry instance for error tracking
 
 const app = express();

@@ -67,7 +67,7 @@ const HallOfFamePage = () => {
             Hall Of Fame
           </h1>
           <p className="text-slate-500 font-mono text-xs mt-2.5 uppercase tracking-widest">
-            // // The Official Record of Tournament Champions & Team Legends
+            // The Official Record of Tournament Champions & Team Legends
           </p>
           <div className="w-12 h-[2px] bg-gradient-to-r from-cyan-500 to-emerald-500 mx-auto mt-5 rounded-full shadow-[0_0_10px_rgba(6,182,212,0.5)]"></div>
         </div>
